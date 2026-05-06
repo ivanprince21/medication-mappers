@@ -1,13 +1,22 @@
 """
 parser.py — Medication parsing, lookup, and enrichment pipeline.
 
-Lookup priority per input row:
-  MedicationsCodeSystemName = "RxNorm" → RxNorm API (RXCUI) → local dict → HCC
-  MedicationsCodeSystemName = "NDC"    → openFDA NDC API     → local dict → HCC
-  Anything else                        → text match (MedicationsCodeDisplayName) → local dict → HCC
+Lookup flow per input row:
+  1. Call external API based on MedicationsCodeSystemName:
+       RxNorm → NLM RxNorm API  (returns: generic name, brand, class, RXCUI confirmed)
+       NDC    → openFDA NDC API (returns: generic name, brand, dosage form, RXCUI if available)
 
-HCC enrichment runs after ICD codes are resolved (from local dict).
-All ICD codes are looked up in the local CMS-HCC v28 crosswalk.
+  2. DUAL dictionary lookup (both run, RXCUI match takes priority):
+       a. RXCUI match  — exact lookup by RXCUI stored in dictionary entries (fast, precise)
+       b. Name match   — text match on generic name from API response
+       If both find the SAME entry → confirmed, highest confidence
+       If they find DIFFERENT entries → RXCUI match used, flagged for review
+       If only one finds → use that result
+
+  3. HCC enrichment — resolved ICD codes looked up in CMS-HCC v28 crosswalk (local, offline)
+
+Note: MedicationsCode column contains the code VALUE (e.g. drug name for RxNorm, NDC number for NDC).
+      The app calls the API to resolve it to a RXCUI/drug info — you do not need to provide RXCUI directly.
 
 To add drugs:        edit medication_dictionary.json
 To add ICD→HCC maps: edit hcc_crosswalk.json
@@ -33,10 +42,19 @@ def load_dictionary() -> dict:
 
 DRUG_DICT = load_dictionary()
 
+# Brand name → generic key index
 BRAND_TO_GENERIC: dict[str, str] = {}
 for _g, _e in DRUG_DICT.items():
     for _b in _e.get("brand_names", []):
         BRAND_TO_GENERIC[_b.lower().strip()] = _g
+
+# RXCUI → generic key index (for direct RXCUI-based lookup)
+# Built from the "rxcui" field stored in each dictionary entry (populated by build_dictionary.py)
+RXCUI_TO_GENERIC: dict[str, str] = {}
+for _g, _e in DRUG_DICT.items():
+    _rxcui = str(_e.get("rxcui", "")).strip()
+    if _rxcui and _rxcui not in ("", "0", "None"):
+        RXCUI_TO_GENERIC[_rxcui] = _g
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 REQUIRED_INPUT_COLS = [
@@ -100,6 +118,15 @@ def _pad(lst: list, size: int, fill: str = "") -> list:
 
 
 # ── Local dictionary lookup ───────────────────────────────────────────────────
+def lookup_by_rxcui(rxcui: str) -> str | None:
+    """
+    Exact RXCUI lookup against the dictionary RXCUI index.
+    Returns the generic dict key or None.
+    This is the fastest and most precise lookup path.
+    """
+    return RXCUI_TO_GENERIC.get(str(rxcui).strip())
+
+
 def lookup_drug(name: str) -> tuple[str | None, str]:
     n = name.lower().strip()
     if not n:
@@ -274,108 +301,184 @@ def _drug_info_unknown(parsed_name: str, dosage: str, reason: str) -> dict:
 
 
 # ── Shared resolution logic ───────────────────────────────────────────────────
-def _try_local_dict(name_candidates: list[str], dosage: str, strength_form: str,
-                    data_source: str) -> dict | None:
-    """Try name candidates against local dict. Returns drug info dict or None."""
+def _name_lookup(name_candidates: list[str]) -> tuple[str | None, str]:
+    """Try a list of name candidates against local dict. Returns (generic_key, brand_matched)."""
     for candidate in name_candidates:
         if not candidate:
             continue
-        norm = _normalize_text(candidate)
-        generic_key, brand_matched = lookup_drug(norm)
+        generic_key, brand_matched = lookup_drug(_normalize_text(candidate))
         if generic_key:
-            return _drug_info_from_dict(generic_key, dosage, strength_form, brand_matched, data_source)
-    return None
+            return generic_key, brand_matched
+    return None, ""
+
+
+def _dual_lookup(rxcui: str, name_candidates: list[str]) -> tuple[str | None, str, str]:
+    """
+    Run both RXCUI and name lookups simultaneously.
+    Returns (generic_key, brand_matched, match_note).
+
+    Priority:
+      Both agree  → use result, note "RXCUI + name match confirmed"
+      RXCUI only  → use RXCUI result, note accordingly
+      Name only   → use name result, note accordingly
+      Neither     → (None, "", "not found")
+    If they disagree → use RXCUI result, flag disagreement for review
+    """
+    rxcui_key  = lookup_by_rxcui(rxcui) if rxcui else None
+    name_key, brand_matched = _name_lookup(name_candidates)
+
+    if rxcui_key and name_key:
+        if rxcui_key == name_key:
+            return rxcui_key, brand_matched, "RXCUI match + name match confirmed"
+        else:
+            # Disagree — RXCUI is more precise, use it but flag
+            return rxcui_key, "", f"RXCUI match used (name match found different entry: {name_key}) — verify"
+    elif rxcui_key:
+        return rxcui_key, "", "RXCUI direct match"
+    elif name_key:
+        return name_key, brand_matched, "Name match (no RXCUI in dictionary)"
+    else:
+        return None, "", "not found"
 
 
 def _resolve_drug(code_system: str, med_code: str,
                   name_candidates: list[str],
                   dosage: str, strength_form: str) -> dict:
     """
-    Resolve a drug to its full info dict using the appropriate lookup path.
+    Resolve a drug using dual lookup (RXCUI + name match) after calling external API.
 
-    MedicationsCodeSystemName = RxNorm → RxNorm API → local dict → HCC
-    MedicationsCodeSystemName = NDC    → openFDA NDC API → local dict → HCC
-    Anything else                      → local dict text match → HCC
+    Flow:
+      1. Call external API (RxNorm or NDC) → get drug info + RXCUI
+      2. Run DUAL lookup: RXCUI index match AND generic name text match
+      3. RXCUI match takes priority; name match confirms or flags disagreement
+      4. Enrich result with API data (name, brand, class) regardless of match path
+      5. Fall back to name-only if API unavailable
     """
     sys_lower = code_system.lower().strip()
 
     # ── RxNorm path ───────────────────────────────────────────────────────────
     if sys_lower in RXNORM_SYSTEM_NAMES:
-        rxcui = re.sub(r"\D", "", med_code)
-        if rxcui:
-            api = lookup_rxcui(rxcui)
-            if api["found"]:
-                # Try local dict with generic and brand names from API
-                for name in [api["generic_name"]] + api["brand_names"]:
-                    generic_key, brand_matched = lookup_drug(name)
-                    if generic_key:
-                        return _drug_info_from_dict(
-                            generic_key, dosage, strength_form, brand_matched,
-                            data_source=f"RxNorm API + Local Dictionary (RXCUI {rxcui})",
-                        )
-                # API found drug but not in local dict
-                brand = api["brand_names"][0] if api["brand_names"] else ""
-                return _drug_info_api_only(
-                    api["generic_name"], brand, api.get("drug_class", ""),
-                    f"RxNorm API (RXCUI {rxcui})", dosage, strength_form,
-                    data_source=f"RxNorm API only (RXCUI {rxcui}) — add to local dict for ICD/HCC",
-                )
-            # API failed — fall through to text lookup
-            api_error_note = f" (RxNorm API failed: {api.get('error', '')})"
-        else:
-            api_error_note = " (invalid RXCUI)"
+        # MedicationsCode for RxNorm is the drug name (e.g. "Metformin") or RXCUI number
+        # Try to extract digits as RXCUI, otherwise use as drug name
+        rxcui_digits = re.sub(r"\D", "", med_code)
 
-        result = _try_local_dict(name_candidates, dosage, strength_form,
-                                 "Local Dictionary" + api_error_note)
-        if result:
+        api_rxcui  = ""
+        api        = None
+        api_error  = ""
+
+        if rxcui_digits:
+            # med_code looks like a number — treat as RXCUI directly
+            api = lookup_rxcui(rxcui_digits)
+            if api["found"]:
+                api_rxcui = rxcui_digits
+            else:
+                api_error = api.get("error", "")
+        else:
+            # med_code is a drug name — search RxNorm by name to get RXCUI
+            # Use display name candidates for the API lookup name
+            pass  # api stays None; fall through to name-only lookup
+
+        # Dual lookup: use RXCUI from API + name candidates
+        all_name_candidates = []
+        if api and api["found"]:
+            all_name_candidates = [api["generic_name"]] + api.get("brand_names", [])
+        all_name_candidates += name_candidates
+
+        dict_key, brand_matched, match_note = _dual_lookup(api_rxcui, all_name_candidates)
+
+        if dict_key:
+            # Enrich: override brand/class from API if dict entry is missing them
+            entry     = DRUG_DICT[dict_key]
+            api_brand = (api.get("brand_names", [""])[0] if api and api["found"] else "") or ""
+            api_class = (api.get("drug_class", "") if api and api["found"] else "") or ""
+            brand_out = brand_matched or api_brand or (entry.get("brand_names") or [""])[0]
+            class_out = entry.get("drug_class") or api_class
+
+            # Temporarily patch entry for display (don't mutate DRUG_DICT)
+            src_note = f"RXCUI {api_rxcui}" if api_rxcui else "name"
+            source   = f"RxNorm API ({src_note}) + Local Dict [{match_note}]"
+            result   = _drug_info_from_dict(dict_key, dosage, strength_form, brand_out, source)
+            if not result["Drug Class"] and class_out:
+                result["Drug Class"] = class_out
+            if api_error:
+                result["Ambiguity Notes"] = (result.get("Ambiguity Notes", "") +
+                                             f" API note: {api_error}").strip()
             return result
+
+        # Not in dict — return API-only info if we have it
+        if api and api["found"]:
+            brand = api.get("brand_names", [""])[0] if api.get("brand_names") else ""
+            return _drug_info_api_only(
+                api["generic_name"], brand, api.get("drug_class", ""),
+                f"RxNorm API (RXCUI {api_rxcui})", dosage, strength_form,
+                data_source=f"RxNorm API only — not in local dict. Add to medication_dictionary.json.",
+            )
+
+        # API failed — name-only fallback
+        name_key, nm_brand, _ = _dual_lookup("", name_candidates)
+        if name_key:
+            note = f"Local Dict name match (RxNorm API failed: {api_error})"
+            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand, note)
+
         return _drug_info_unknown(
             name_candidates[0] if name_candidates else med_code, dosage,
-            f"RxNorm lookup failed{api_error_note}. Medication not in local dictionary."
+            f"Not found. RxNorm API: {api_error or 'unavailable'}. "
+            "Not in local dictionary. Add to medication_dictionary.json."
         )
 
     # ── NDC path ─────────────────────────────────────────────────────────────
     if sys_lower in NDC_SYSTEM_NAMES:
         ndc_result = lookup_ndc(med_code)
+
         if ndc_result["found"]:
+            api_rxcui         = ndc_result.get("rxcui", "")   # RXCUI from openFDA openfda section
             generic_from_ndc  = ndc_result["generic_name"]
             brand_from_ndc    = ndc_result["brand_name"]
-            class_from_ndc    = ndc_result["dosage_form"]   # best proxy available
-            strength_from_ndc = strength_form or ndc_result.get("dosage_form", "")
+            class_from_ndc    = ndc_result.get("dosage_form", "")
+            strength_from_ndc = strength_form or class_from_ndc
 
-            # Build richer name candidates: NDC generic + display names
-            all_candidates = [generic_from_ndc] + name_candidates
-            result = _try_local_dict(all_candidates, dosage, strength_from_ndc,
-                                     f"NDC API + Local Dictionary (NDC {med_code})")
-            if result:
+            all_name_candidates = [generic_from_ndc] + name_candidates
+
+            dict_key, brand_matched, match_note = _dual_lookup(api_rxcui, all_name_candidates)
+
+            if dict_key:
+                entry     = DRUG_DICT[dict_key]
+                brand_out = brand_matched or brand_from_ndc or (entry.get("brand_names") or [""])[0]
+                class_out = entry.get("drug_class") or class_from_ndc
+                rxcui_ref = f"RXCUI {api_rxcui}" if api_rxcui else "name"
+                source    = f"NDC API (NDC {med_code}, {rxcui_ref}) + Local Dict [{match_note}]"
+                result    = _drug_info_from_dict(dict_key, dosage, strength_from_ndc, brand_out, source)
+                if not result["Drug Class"] and class_out:
+                    result["Drug Class"] = class_out
                 return result
 
             # NDC resolved but not in local dict
             return _drug_info_api_only(
                 generic_from_ndc, brand_from_ndc, class_from_ndc,
-                f"openFDA NDC API (NDC {med_code})",
-                dosage, strength_from_ndc,
-                data_source=f"openFDA NDC API (NDC {med_code}) — add to local dict for ICD/HCC",
+                f"openFDA NDC API (NDC {med_code})", dosage, strength_from_ndc,
+                data_source=f"NDC API only — not in local dict. Add to medication_dictionary.json.",
             )
 
-        # NDC API failed — fall through to display name text lookup
-        ndc_error_note = f" (NDC API: {ndc_result.get('error', 'not found')})"
-        result = _try_local_dict(name_candidates, dosage, strength_form,
-                                 "Local Dictionary" + ndc_error_note)
-        if result:
-            return result
+        # NDC API failed — name fallback
+        ndc_error = ndc_result.get("error", "not found")
+        name_key, nm_brand, _ = _dual_lookup("", name_candidates)
+        if name_key:
+            note = f"Local Dict name match (NDC API failed: {ndc_error})"
+            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand, note)
+
         return _drug_info_unknown(
             name_candidates[0] if name_candidates else med_code, dosage,
-            f"NDC lookup failed{ndc_error_note}. Medication not in local dictionary."
+            f"Not found. NDC API: {ndc_error}. Not in local dictionary."
         )
 
     # ── Text / display-name path (any other code system) ─────────────────────
-    result = _try_local_dict(name_candidates, dosage, strength_form, "Local Dictionary")
-    if result:
-        return result
+    name_key, brand_matched, match_note = _dual_lookup("", name_candidates)
+    if name_key:
+        return _drug_info_from_dict(name_key, dosage, strength_form, brand_matched,
+                                    f"Local Dictionary [{match_note}]")
     return _drug_info_unknown(
         name_candidates[0] if name_candidates else "", dosage,
-        "Medication not recognized in local dictionary. Add entry to medication_dictionary.json.",
+        "Medication not recognized. Add to medication_dictionary.json.",
     )
 
 

@@ -66,6 +66,7 @@ def lookup_ndc(ndc_raw: str) -> dict:
     Returns dict:
         found               (bool)
         ndc                 (str)   — input NDC
+        rxcui               (str)   — RXCUI from openFDA openfda.rxcui field (may be empty)
         generic_name        (str)
         brand_name          (str)
         dosage_form         (str)   e.g. "TABLET"
@@ -77,6 +78,7 @@ def lookup_ndc(ndc_raw: str) -> dict:
     result = {
         "found":              False,
         "ndc":                ndc_raw,
+        "rxcui":              "",   # populated from openfda.rxcui if available
         "generic_name":       "",
         "brand_name":         "",
         "dosage_form":        "",
@@ -129,6 +131,11 @@ def lookup_ndc(ndc_raw: str) -> dict:
                     {"name": i.get("name", ""), "strength": i.get("strength", "")}
                     for i in ingredients
                 ]
+
+                # RXCUI from openFDA openfda section — use for dictionary RXCUI lookup
+                openfda_section = hit.get("openfda", {})
+                rxcui_list = openfda_section.get("rxcui", [])
+                result["rxcui"] = str(rxcui_list[0]).strip() if rxcui_list else ""
 
                 return result
 
