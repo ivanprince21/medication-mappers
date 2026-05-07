@@ -2,17 +2,37 @@
 ndc_client.py — openFDA Drug NDC API client.
 API: https://api.fda.gov/drug/ndc.json  (free, no key required)
 
-Used when MedicationsCodeSystemName = "NDC" in the structured input file.
-Lookups are cached per NDC code for the lifetime of the app session.
-Falls back gracefully when offline.
+Rate limits:
+  Without API key: 240 requests/minute, 1000 requests/day
+  With API key:    240 requests/minute, no daily limit  ← recommended for batch use
+
+Get a free API key at: https://open.fda.gov/apis/authentication/
+
+To set your API key — run this once in Command Prompt before starting the app:
+  set OPENFDA_API_KEY=your_key_here
+
+Or set it permanently in Windows environment variables.
+
+Lookups are cached per NDC code — same NDC won't re-query in the same session.
+429 rate limit errors are retried automatically with exponential backoff.
 """
 
+import os
 import re
+import time
 import requests
 from functools import lru_cache
 
 FDA_NDC_URL = "https://api.fda.gov/drug/ndc.json"
-TIMEOUT     = 6   # seconds
+TIMEOUT     = 8    # seconds per request
+
+# Free API key from https://open.fda.gov/apis/authentication/
+# Set via: set OPENFDA_API_KEY=your_key_here  (in Command Prompt before running app)
+OPENFDA_API_KEY = os.environ.get("OPENFDA_API_KEY", "CLaoyTZACvszQOSGYxVW5vE2H5x6ZGNhkq6tlvP5").strip()
+
+# Retry settings for 429 rate limit errors
+MAX_RETRIES  = 3
+RETRY_DELAYS = [2, 5, 10]   # seconds to wait before each retry
 
 # Code system names that indicate an NDC value in MedicationsCode
 NDC_SYSTEM_NAMES = {
@@ -35,50 +55,82 @@ def _normalize_ndc(raw: str) -> list[str]:
     digits_only = re.sub(r"\D", "", raw)
     candidates = [raw.strip()]           # try as-is first
 
-    # If it has dashes, also try without
     if "-" in raw:
         candidates.append(digits_only)
 
-    # Common NDC segment formats: 5-4-2, 5-3-2, 4-4-2, 5-4-1 → also try 11-digit zero-padded
     if len(digits_only) == 10:
-        candidates.append("0" + digits_only)    # pad to 11 digits
+        candidates.append("0" + digits_only)
     if len(digits_only) == 11:
-        candidates.append(digits_only[1:])      # try 10-digit
+        candidates.append(digits_only[1:])
 
-    return list(dict.fromkeys(candidates))      # deduplicate, preserve order
+    return list(dict.fromkeys(candidates))
 
 
 def check_ndc_api_available() -> bool:
     """Quick check if openFDA NDC API is reachable."""
     try:
-        r = requests.get(FDA_NDC_URL, params={"search": 'generic_name:"metformin"', "limit": "1"}, timeout=3)
+        params = {"search": 'generic_name:"metformin"', "limit": "1"}
+        if OPENFDA_API_KEY:
+            params["api_key"] = OPENFDA_API_KEY
+        r = requests.get(FDA_NDC_URL, params=params, timeout=3)
         return r.status_code == 200
     except Exception:
         return False
+
+
+def _get_with_retry(url: str, params: dict) -> requests.Response | None:
+    """
+    GET request with automatic retry on 429 (rate limit).
+    Waits RETRY_DELAYS[attempt] seconds before each retry.
+    Returns Response or None if all retries exhausted.
+    """
+    if OPENFDA_API_KEY:
+        params = {**params, "api_key": OPENFDA_API_KEY}
+
+    last_response = None
+    for attempt in range(MAX_RETRIES):
+        try:
+            r = requests.get(url, params=params, timeout=TIMEOUT)
+            if r.status_code == 429:
+                if attempt < MAX_RETRIES - 1:
+                    wait = RETRY_DELAYS[attempt]
+                    time.sleep(wait)
+                    continue
+                else:
+                    last_response = r
+                    break
+            return r   # success or non-429 error
+        except requests.Timeout:
+            raise
+        except requests.ConnectionError:
+            raise
+
+    return last_response   # returns 429 response after all retries
 
 
 @lru_cache(maxsize=512)
 def lookup_ndc(ndc_raw: str) -> dict:
     """
     Query openFDA Drug NDC API for a given NDC code.
+    Retries automatically on 429 rate limit with exponential backoff.
     Cached per raw NDC string — same code won't re-query in the same session.
 
     Returns dict:
         found               (bool)
-        ndc                 (str)   — input NDC
-        rxcui               (str)   — RXCUI from openFDA openfda.rxcui field (may be empty)
+        ndc                 (str)
+        rxcui               (str)   — from openfda.rxcui if available
         generic_name        (str)
         brand_name          (str)
-        dosage_form         (str)   e.g. "TABLET"
-        route               (str)   e.g. "ORAL"
-        active_ingredients  (list)  — list of {"name": ..., "strength": ...}
-        labeler             (str)   — manufacturer
+        dosage_form         (str)
+        route               (str)
+        active_ingredients  (list)
+        labeler             (str)
         error               (str|None)
     """
     result = {
         "found":              False,
         "ndc":                ndc_raw,
-        "rxcui":              "",   # populated from openfda.rxcui if available
+        "rxcui":              "",
         "generic_name":       "",
         "brand_name":         "",
         "dosage_form":        "",
@@ -91,23 +143,30 @@ def lookup_ndc(ndc_raw: str) -> dict:
     candidates = _normalize_ndc(ndc_raw)
 
     for candidate in candidates:
-        # Try package_ndc (full NDC including package segment)
         for search_field in ("packaging.package_ndc", "product_ndc"):
             try:
-                r = requests.get(
+                r = _get_with_retry(
                     FDA_NDC_URL,
-                    params={
-                        "search": f'{search_field}:"{candidate}"',
-                        "limit": "1",
-                    },
-                    timeout=TIMEOUT,
+                    {"search": f'{search_field}:"{candidate}"', "limit": "1"},
                 )
 
+                if r is None:
+                    result["error"] = "openFDA API unreachable."
+                    return result
+
+                if r.status_code == 429:
+                    result["error"] = (
+                        "openFDA rate limit exceeded (429). "
+                        "Get a free API key at open.fda.gov/apis/authentication/ "
+                        "and set OPENFDA_API_KEY environment variable to increase limits."
+                    )
+                    return result
+
                 if r.status_code == 404:
-                    continue    # not found with this field/candidate
+                    continue
 
                 r.raise_for_status()
-                data = r.json()
+                data         = r.json()
                 results_list = data.get("results", [])
 
                 if not results_list:
@@ -121,20 +180,18 @@ def lookup_ndc(ndc_raw: str) -> dict:
                 result["dosage_form"]  = hit.get("dosage_form", "").strip()
                 result["labeler"]      = hit.get("labeler_name", "").strip()
 
-                # Route: may be a list
                 routes = hit.get("route", [])
                 result["route"] = routes[0] if routes else ""
 
-                # Active ingredients
                 ingredients = hit.get("active_ingredients", [])
                 result["active_ingredients"] = [
                     {"name": i.get("name", ""), "strength": i.get("strength", "")}
                     for i in ingredients
                 ]
 
-                # RXCUI from openFDA openfda section — use for dictionary RXCUI lookup
+                # RXCUI from openFDA openfda section
                 openfda_section = hit.get("openfda", {})
-                rxcui_list = openfda_section.get("rxcui", [])
+                rxcui_list      = openfda_section.get("rxcui", [])
                 result["rxcui"] = str(rxcui_list[0]).strip() if rxcui_list else ""
 
                 return result
@@ -148,12 +205,11 @@ def lookup_ndc(ndc_raw: str) -> dict:
             except requests.HTTPError as e:
                 if r.status_code == 404:
                     continue
-                result["error"] = f"openFDA NDC API error: {e}"
+                result["error"] = f"openFDA NDC API HTTP error: {e}"
                 return result
             except Exception as e:
                 result["error"] = f"openFDA NDC API error: {e}"
                 return result
 
-    # All candidates tried — not found
     result["error"] = f"NDC '{ndc_raw}' not found in openFDA database. Verify NDC format."
     return result
