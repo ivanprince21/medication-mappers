@@ -29,6 +29,7 @@ import os
 from rxnorm_client import extract_rxcui, lookup_rxcui
 from ndc_client    import lookup_ndc, NDC_SYSTEM_NAMES
 from hcc_lookup    import lookup_hcc_for_codes, has_high_value_hcc
+from icd10_client  import lookup_description, search_icd10_for_drug
 
 # ── Load medication dictionary ────────────────────────────────────────────────
 _DICT_PATH = os.path.join(os.path.dirname(__file__), "medication_dictionary.json")
@@ -155,19 +156,20 @@ def lookup_drug(name: str) -> tuple[str | None, str]:
 
 
 # ── HCC enrichment ────────────────────────────────────────────────────────────
-def _build_hcc_columns(icd_codes: list[str]) -> dict:
+def _build_icd_columns(icd_codes: list[str]) -> dict:
     """
-    Look up HCC info for up to 4 ICD codes.
-    Returns flat dict of HCC columns (interleaved with ICD slots 1-4).
+    Look up ICD-10-CM descriptions and HCC info for up to 4 ICD codes.
+    Returns flat dict covering ICD Description + HCC columns for slots 1-4.
     """
     hcc_results = lookup_hcc_for_codes(icd_codes)
     high_value  = has_high_value_hcc(icd_codes)
     out = {}
 
-    for i, hcc in enumerate(hcc_results, start=1):
-        out[f"HCC Category (ICD {i})"]     = hcc["hcc_category"]
+    for i, (code, hcc) in enumerate(zip(icd_codes, hcc_results), start=1):
+        out[f"ICD-10 Description {i}"]        = lookup_description(code) if code else ""
+        out[f"HCC Category (ICD {i})"]        = hcc["hcc_category"]
         out[f"HCC Model Hierarchy (ICD {i})"] = hcc["model_hierarchy"]
-        out[f"HCC Description (ICD {i})"]  = hcc["hcc_label"]
+        out[f"HCC Description (ICD {i})"]     = hcc["hcc_label"]
 
     out["High Value HCC Flag"] = "YES — Review" if high_value else "No"
     return out
@@ -186,7 +188,7 @@ def _drug_info_from_dict(dict_key: str, dosage: str, strength_form: str,
         brand_names[0].title() if brand_names else ""
     )
 
-    hcc_cols = _build_hcc_columns(icd_codes)
+    icd_cols = _build_icd_columns(icd_codes)
 
     return {
         "Normalized Generic Name":       entry["generic_name"].title(),
@@ -202,22 +204,26 @@ def _drug_info_from_dict(dict_key: str, dosage: str, strength_form: str,
         "Possible Related Condition 2":  conditions[1],
         "Possible Related Condition 3":  conditions[2],
         "Possible ICD-10-CM Code 1":     icd_codes[0],
-        "HCC Category (ICD 1)":          hcc_cols.get("HCC Category (ICD 1)", ""),
-        "HCC Model Hierarchy (ICD 1)":   hcc_cols.get("HCC Model Hierarchy (ICD 1)", ""),
-        "HCC Description (ICD 1)":       hcc_cols.get("HCC Description (ICD 1)", ""),
+        "ICD-10 Description 1":          icd_cols.get("ICD-10 Description 1", ""),
+        "HCC Category (ICD 1)":          icd_cols.get("HCC Category (ICD 1)", ""),
+        "HCC Model Hierarchy (ICD 1)":   icd_cols.get("HCC Model Hierarchy (ICD 1)", ""),
+        "HCC Description (ICD 1)":       icd_cols.get("HCC Description (ICD 1)", ""),
         "Possible ICD-10-CM Code 2":     icd_codes[1],
-        "HCC Category (ICD 2)":          hcc_cols.get("HCC Category (ICD 2)", ""),
-        "HCC Model Hierarchy (ICD 2)":   hcc_cols.get("HCC Model Hierarchy (ICD 2)", ""),
-        "HCC Description (ICD 2)":       hcc_cols.get("HCC Description (ICD 2)", ""),
+        "ICD-10 Description 2":          icd_cols.get("ICD-10 Description 2", ""),
+        "HCC Category (ICD 2)":          icd_cols.get("HCC Category (ICD 2)", ""),
+        "HCC Model Hierarchy (ICD 2)":   icd_cols.get("HCC Model Hierarchy (ICD 2)", ""),
+        "HCC Description (ICD 2)":       icd_cols.get("HCC Description (ICD 2)", ""),
         "Possible ICD-10-CM Code 3":     icd_codes[2],
-        "HCC Category (ICD 3)":          hcc_cols.get("HCC Category (ICD 3)", ""),
-        "HCC Model Hierarchy (ICD 3)":   hcc_cols.get("HCC Model Hierarchy (ICD 3)", ""),
-        "HCC Description (ICD 3)":       hcc_cols.get("HCC Description (ICD 3)", ""),
+        "ICD-10 Description 3":          icd_cols.get("ICD-10 Description 3", ""),
+        "HCC Category (ICD 3)":          icd_cols.get("HCC Category (ICD 3)", ""),
+        "HCC Model Hierarchy (ICD 3)":   icd_cols.get("HCC Model Hierarchy (ICD 3)", ""),
+        "HCC Description (ICD 3)":       icd_cols.get("HCC Description (ICD 3)", ""),
         "Possible ICD-10-CM Code 4":     icd_codes[3],
-        "HCC Category (ICD 4)":          hcc_cols.get("HCC Category (ICD 4)", ""),
-        "HCC Model Hierarchy (ICD 4)":   hcc_cols.get("HCC Model Hierarchy (ICD 4)", ""),
-        "HCC Description (ICD 4)":       hcc_cols.get("HCC Description (ICD 4)", ""),
-        "High Value HCC Flag":           hcc_cols.get("High Value HCC Flag", "No"),
+        "ICD-10 Description 4":          icd_cols.get("ICD-10 Description 4", ""),
+        "HCC Category (ICD 4)":          icd_cols.get("HCC Category (ICD 4)", ""),
+        "HCC Model Hierarchy (ICD 4)":   icd_cols.get("HCC Model Hierarchy (ICD 4)", ""),
+        "HCC Description (ICD 4)":       icd_cols.get("HCC Description (ICD 4)", ""),
+        "High Value HCC Flag":           icd_cols.get("High Value HCC Flag", "No"),
         "Confidence Level":              entry.get("confidence", ""),
         "Manual Review Flag":            "YES" if entry.get("manual_review") else "No",
         "Ambiguity Notes":               entry.get("ambiguity_note", ""),
@@ -228,14 +234,32 @@ def _drug_info_from_dict(dict_key: str, dosage: str, strength_form: str,
 def _drug_info_api_only(api_name: str, api_brand: str, api_class: str,
                         api_ref: str, dosage: str, strength_form: str,
                         data_source: str) -> dict:
-    """Drug resolved via API (RxNorm or NDC) but not in local dict — ICD/HCC unavailable."""
-    empty_hcc = {
-        f"HCC Category (ICD {i})": "" for i in range(1, 5)
-    } | {
-        f"HCC Model Hierarchy (ICD {i})": "" for i in range(1, 5)
-    } | {
-        f"HCC Description (ICD {i})": "" for i in range(1, 5)
-    }
+    """
+    Drug resolved via API (RxNorm or NDC) but not in local dict.
+    Attempts live ICD-10-CM search using drug class → clinical term mapping.
+    HCC lookup is skipped (no reliable ICD codes).
+    """
+    # Live ICD-10 search (Step 3)
+    icd_results = list(search_icd10_for_drug(
+        api_name or "", api_class or "", max_results=4
+    ))
+    icd_results += [{}] * (4 - len(icd_results))   # pad to 4 slots
+
+    def _code(i):  return icd_results[i].get("code", "") if icd_results[i] else ""
+    def _desc(i):  return icd_results[i].get("description", "") if icd_results[i] else ""
+
+    live_icd_found = bool(icd_results[0])
+    icd_note = (
+        "Possible ICD-10-CM codes from live NLM search — not verified against clinical context."
+        if live_icd_found else
+        "ICD-10/HCC mapping unavailable — add to medication_dictionary.json."
+    )
+
+    empty_hcc = {}
+    for i in range(1, 5):
+        empty_hcc[f"HCC Category (ICD {i})"]        = ""
+        empty_hcc[f"HCC Model Hierarchy (ICD {i})"] = ""
+        empty_hcc[f"HCC Description (ICD {i})"]     = ""
 
     return {
         "Normalized Generic Name":       api_name.title() if api_name else "",
@@ -243,7 +267,7 @@ def _drug_info_api_only(api_name: str, api_brand: str, api_class: str,
         "Dosage":                        dosage,
         "Strength / Form":               strength_form or dosage,
         "Drug Class":                    api_class,
-        "Possible Indication 1":         "Insufficient specificity — not in local dictionary",
+        "Possible Indication 1":         "Not in local dictionary — see live ICD-10 search below" if live_icd_found else "Insufficient specificity — not in local dictionary",
         "Possible Indication 2":         "",
         "Possible Indication 3":         "",
         "Why Member May Take This Drug": (
@@ -253,27 +277,30 @@ def _drug_info_api_only(api_name: str, api_brand: str, api_class: str,
         "Possible Related Condition 1":  "Manual review required",
         "Possible Related Condition 2":  "",
         "Possible Related Condition 3":  "",
-        "Possible ICD-10-CM Code 1":     "N/A — not in local dictionary",
+        "Possible ICD-10-CM Code 1":     _code(0) or "N/A — not in local dictionary",
+        "ICD-10 Description 1":          _desc(0),
         **empty_hcc,
-        "Possible ICD-10-CM Code 2":     "",
-        "Possible ICD-10-CM Code 3":     "",
-        "Possible ICD-10-CM Code 4":     "",
+        "Possible ICD-10-CM Code 2":     _code(1),
+        "ICD-10 Description 2":          _desc(1),
+        "Possible ICD-10-CM Code 3":     _code(2),
+        "ICD-10 Description 3":          _desc(2),
+        "Possible ICD-10-CM Code 4":     _code(3),
+        "ICD-10 Description 4":          _desc(3),
         "High Value HCC Flag":           "Unknown — Manual Review",
         "Confidence Level":              "Low",
         "Manual Review Flag":            "YES",
-        "Ambiguity Notes":               f"Resolved via {api_ref}. ICD-10/HCC mapping unavailable — add to medication_dictionary.json.",
+        "Ambiguity Notes":               f"Resolved via {api_ref}. {icd_note}",
         "Data Source":                   data_source,
     }
 
 
 def _drug_info_unknown(parsed_name: str, dosage: str, reason: str) -> dict:
-    empty_hcc = {
-        f"HCC Category (ICD {i})": "" for i in range(1, 5)
-    } | {
-        f"HCC Model Hierarchy (ICD {i})": "" for i in range(1, 5)
-    } | {
-        f"HCC Description (ICD {i})": "" for i in range(1, 5)
-    }
+    empty_icd = {}
+    for i in range(1, 5):
+        empty_icd[f"ICD-10 Description {i}"]        = ""
+        empty_icd[f"HCC Category (ICD {i})"]        = ""
+        empty_icd[f"HCC Model Hierarchy (ICD {i})"] = ""
+        empty_icd[f"HCC Description (ICD {i})"]     = ""
     return {
         "Normalized Generic Name":       "Unknown Medication",
         "Brand Name Match":              "",
@@ -288,7 +315,7 @@ def _drug_info_unknown(parsed_name: str, dosage: str, reason: str) -> dict:
         "Possible Related Condition 2":  "",
         "Possible Related Condition 3":  "",
         "Possible ICD-10-CM Code 1":     "N/A",
-        **empty_hcc,
+        **empty_icd,
         "Possible ICD-10-CM Code 2":     "",
         "Possible ICD-10-CM Code 3":     "",
         "Possible ICD-10-CM Code 4":     "",
@@ -503,18 +530,22 @@ STRUCTURED_OUTPUT_COLS = [
     "Possible Related Condition 2",
     "Possible Related Condition 3",
     "Possible ICD-10-CM Code 1",
+    "ICD-10 Description 1",
     "HCC Category (ICD 1)",
     "HCC Model Hierarchy (ICD 1)",
     "HCC Description (ICD 1)",
     "Possible ICD-10-CM Code 2",
+    "ICD-10 Description 2",
     "HCC Category (ICD 2)",
     "HCC Model Hierarchy (ICD 2)",
     "HCC Description (ICD 2)",
     "Possible ICD-10-CM Code 3",
+    "ICD-10 Description 3",
     "HCC Category (ICD 3)",
     "HCC Model Hierarchy (ICD 3)",
     "HCC Description (ICD 3)",
     "Possible ICD-10-CM Code 4",
+    "ICD-10 Description 4",
     "HCC Category (ICD 4)",
     "HCC Model Hierarchy (ICD 4)",
     "HCC Description (ICD 4)",
@@ -604,18 +635,22 @@ FREETEXT_OUTPUT_COLS = [
     "Possible Related Condition 2",
     "Possible Related Condition 3",
     "Possible ICD-10-CM Code 1",
+    "ICD-10 Description 1",
     "HCC Category (ICD 1)",
     "HCC Model Hierarchy (ICD 1)",
     "HCC Description (ICD 1)",
     "Possible ICD-10-CM Code 2",
+    "ICD-10 Description 2",
     "HCC Category (ICD 2)",
     "HCC Model Hierarchy (ICD 2)",
     "HCC Description (ICD 2)",
     "Possible ICD-10-CM Code 3",
+    "ICD-10 Description 3",
     "HCC Category (ICD 3)",
     "HCC Model Hierarchy (ICD 3)",
     "HCC Description (ICD 3)",
     "Possible ICD-10-CM Code 4",
+    "ICD-10 Description 4",
     "HCC Category (ICD 4)",
     "HCC Model Hierarchy (ICD 4)",
     "HCC Description (ICD 4)",

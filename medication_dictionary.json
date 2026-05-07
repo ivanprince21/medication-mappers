@@ -744,7 +744,7 @@
     ],
     "icd10_codes": [
       "M62.838",
-      "M54.5",
+      "M54.50",
       "M54.2"
     ],
     "confidence": "High",
@@ -33990,7 +33990,7 @@
       "G35",
       "G50.0",
       "G72.49",
-      "M54.5"
+      "M54.50"
     ],
     "confidence": "High",
     "manual_review": true,

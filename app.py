@@ -27,6 +27,7 @@ from parser import (
 )
 from rxnorm_client import check_api_available
 from ndc_client    import check_ndc_api_available
+from icd10_client  import lookup_description as _icd10_ping
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -71,11 +72,12 @@ st.markdown("""
 # ── API status row ────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
 def get_api_status():
-    return check_api_available(), check_ndc_api_available()
+    icd10_ok = bool(_icd10_ping("E11.9"))
+    return check_api_available(), check_ndc_api_available(), icd10_ok
 
-rxnorm_ok, ndc_ok = get_api_status()
+rxnorm_ok, ndc_ok, icd10_ok = get_api_status()
 
-sc1, sc2, sc3 = st.columns([2, 2, 4])
+sc1, sc2, sc3, sc4 = st.columns([2, 2, 2, 3])
 with sc1:
     icon = "🟢" if rxnorm_ok else "🔴"
     cls  = "api-online" if rxnorm_ok else "api-offline"
@@ -87,6 +89,11 @@ with sc2:
     txt  = "Online" if ndc_ok else "Offline"
     st.markdown(f'{icon} <span class="{cls}">openFDA NDC API: {txt}</span>', unsafe_allow_html=True)
 with sc3:
+    icon = "🟢" if icd10_ok else "🔴"
+    cls  = "api-online" if icd10_ok else "api-offline"
+    txt  = "Online" if icd10_ok else "Offline"
+    st.markdown(f'{icon} <span class="{cls}">ICD-10 NLM API: {txt}</span>', unsafe_allow_html=True)
+with sc4:
     st.markdown('<span class="hcc-flag">🏷 HCC: CMS-HCC v28 crosswalk (local — offline capable)</span>',
                 unsafe_allow_html=True)
 
@@ -121,8 +128,11 @@ with tab_struct:
 | `NDC`, `ndc`, `National Drug Code`, `ndc11`, `ndc10` | **openFDA NDC API** — `MedicationsCode` treated as NDC |
 | Anything else | **Local dictionary** — text match on `MedicationsCodeDisplayName` |
 
-After ICD codes are resolved from the local dictionary, each code is looked up in the
-**CMS-HCC Model v28 crosswalk** (bundled locally — works offline).
+After ICD codes are resolved from the local dictionary, each code is:
+1. Looked up in the **NLM ICD-10-CM API** for a full description (requires internet)
+2. Looked up in the **CMS-HCC Model v28 crosswalk** (bundled locally — works offline)
+
+For drugs not in the local dictionary (API-only), a **live ICD-10 search** is attempted using the drug class.
         """)
 
     struct_file = st.file_uploader(
@@ -314,9 +324,13 @@ if "results_df" in st.session_state:
         "High Value HCC Flag":          st.column_config.TextColumn(width="small"),
         "Confidence Level":             st.column_config.TextColumn(width="small"),
         "Possible ICD-10-CM Code 1":    st.column_config.TextColumn(width="small"),
+        "ICD-10 Description 1":         st.column_config.TextColumn(width="large"),
         "Possible ICD-10-CM Code 2":    st.column_config.TextColumn(width="small"),
+        "ICD-10 Description 2":         st.column_config.TextColumn(width="large"),
         "Possible ICD-10-CM Code 3":    st.column_config.TextColumn(width="small"),
+        "ICD-10 Description 3":         st.column_config.TextColumn(width="large"),
         "Possible ICD-10-CM Code 4":    st.column_config.TextColumn(width="small"),
+        "ICD-10 Description 4":         st.column_config.TextColumn(width="large"),
         "HCC Category (ICD 1)":         st.column_config.TextColumn(width="small"),
         "HCC Category (ICD 2)":         st.column_config.TextColumn(width="small"),
         "HCC Category (ICD 3)":         st.column_config.TextColumn(width="small"),
@@ -404,6 +418,6 @@ if "results_df" in st.session_state:
 st.markdown("---")
 st.caption(
     "Medication Indication Mapper · Research/Support Tool · Not for clinical diagnosis or billing · "
-    "ICD-10 from local dictionary · HCC from CMS-HCC v28 crosswalk (research use only) · "
+    "ICD-10 from local dictionary · ICD-10 descriptions: NLM API · HCC: CMS-HCC v28 crosswalk (research use only) · "
     "RxNorm: NLM API · NDC: openFDA API"
 )
