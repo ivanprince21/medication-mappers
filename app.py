@@ -65,7 +65,27 @@ section[data-testid="stSidebar"],
     background-color: #ffffff !important;
     color: #212121 !important;
 }
-.block-container { padding-top: 0 !important; max-width: 1400px; background: #ffffff; }
+
+/* ── Full-width 2048px layout — zero side whitespace ── */
+.block-container,
+[data-testid="block-container"] {
+    padding-top: 0 !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+    max-width: 2048px !important;
+    width: 100% !important;
+    background: #ffffff;
+}
+[data-testid="stMain"] > div:first-child {
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    max-width: 100% !important;
+}
+section.main > div {
+    max-width: 2048px !important;
+    padding-left: 1rem !important;
+    padding-right: 1rem !important;
+}
 
 /* All plain text, markdown, paragraphs */
 p, span, li, td, th, div,
@@ -125,7 +145,7 @@ input, textarea {
 .app-header {
     background: linear-gradient(135deg, #003153 0%, #0a4a7a 45%, #1863dc 80%, #29b6f6 100%);
     padding: 0;
-    border-radius: 0 0 16px 16px;
+    border-radius: 0;
     margin-bottom: 1.4rem;
     box-shadow: 0 6px 24px rgba(24,99,220,0.22);
     overflow: hidden;
