@@ -49,24 +49,27 @@ st.markdown("""
 /* ── Global ── */
 html, body, [class*="css"] {
     font-family: 'Inter', 'Segoe UI', sans-serif !important;
-    background-color: #f3fbff;
+    background-color: #ffffff;
 }
-.block-container { padding-top: 0 !important; max-width: 1400px; }
+[data-testid="stAppViewContainer"],
+[data-testid="stMain"],
+section[data-testid="stSidebar"] { background-color: #ffffff !important; }
+.block-container { padding-top: 0 !important; max-width: 1400px; background: #ffffff; }
 
-/* ── Header banner — HealthSmart MSO dark gradient style ── */
+/* ── Header banner — HealthSmart MSO blue ── */
 .app-header {
-    background: linear-gradient(135deg, #110c1d 0%, #1a1230 40%, #003153 75%, #1863dc 100%);
+    background: linear-gradient(135deg, #003153 0%, #0a4a7a 45%, #1863dc 80%, #29b6f6 100%);
     padding: 0;
     border-radius: 0 0 16px 16px;
     margin-bottom: 1.4rem;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.38);
+    box-shadow: 0 6px 24px rgba(24,99,220,0.22);
     overflow: hidden;
 }
 .header-top-bar {
-    background: rgba(0,0,0,0.22);
+    background: rgba(0,0,0,0.15);
     padding: 5px 2rem;
     font-size: 0.69rem;
-    color: rgba(255,255,255,0.55);
+    color: rgba(255,255,255,0.65);
     letter-spacing: 0.3px;
     display: flex;
     justify-content: space-between;
@@ -215,7 +218,7 @@ html, body, [class*="css"] {
 .req-cols {
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.78rem;
-    background: #f3fbff;
+    background: #eaf4fb;
     border: 1px solid #b8ddf5;
     padding: 0.5rem 1rem;
     border-radius: 6px;
@@ -254,7 +257,7 @@ html, body, [class*="css"] {
 
 /* ── Run report banner ── */
 .run-report-banner {
-    background: linear-gradient(135deg, #110c1d 0%, #1a1230 40%, #003153 80%, #1863dc 100%);
+    background: linear-gradient(135deg, #003153 0%, #0a4a7a 50%, #1863dc 100%);
     color: white;
     padding: 0.85rem 1.5rem;
     border-radius: 10px;
@@ -264,7 +267,7 @@ html, body, [class*="css"] {
     justify-content: space-between;
     align-items: center;
     border-left: 4px solid #29b6f6;
-    box-shadow: 6px 6px 9px rgba(0,0,0,0.2);
+    box-shadow: 6px 6px 9px rgba(24,99,220,0.2);
 }
 .run-report-title { font-weight: 700; font-size: 0.93rem; color: #ffffff; }
 .run-report-meta  { color: rgba(255,255,255,0.6); font-size: 0.78rem; }
@@ -344,8 +347,13 @@ div[data-testid="stDataFrame"] { font-size: 0.81rem; }
 .streamlit-expanderHeader {
     font-weight: 600 !important;
     color: #003153 !important;
-    background: #f3fbff !important;
+    background: #eaf4fb !important;
     border-radius: 8px !important;
+}
+
+/* ── Tabs bar background ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #eaf4fb !important;
 }
 
 /* ── Selectbox / inputs ── */

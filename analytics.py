@@ -19,7 +19,7 @@ BRAND_COLORS = [
 _LAYOUT_COMMON = dict(
     template="none",
     paper_bgcolor="#ffffff",
-    plot_bgcolor="#f3fbff",
+    plot_bgcolor="#eaf4fb",
     margin=dict(l=10, r=10, t=44, b=10),
     font=dict(family="Inter, Segoe UI, sans-serif", color="#212121"),
 )
@@ -240,10 +240,11 @@ _CARD_CSS = """
 <style>
 .dash-card {
     background: #ffffff;
-    border: 1px solid #d0e8f5;
+    border: 1px solid #b8ddf5;
+    border-top: 3px solid #1863dc;
     border-radius: 12px;
     padding: 0.6rem 0.8rem 0.4rem 0.8rem;
-    box-shadow: 6px 6px 9px rgba(0,0,0,0.08);
+    box-shadow: 6px 6px 9px rgba(24,99,220,0.09);
     margin-bottom: 0.6rem;
 }
 </style>
