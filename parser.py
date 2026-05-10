@@ -422,8 +422,7 @@ def _resolve_drug(code_system: str, med_code: str,
             class_out = entry.get("drug_class") or api_class
 
             # Temporarily patch entry for display (don't mutate DRUG_DICT)
-            src_note = f"RXCUI {api_rxcui}" if api_rxcui else "name"
-            source   = f"RxNorm API ({src_note}) + Local Dict [{match_note}]"
+            source   = "RxNorm API + Local Dict"
             result   = _drug_info_from_dict(dict_key, dosage, strength_form, brand_out, source)
             if not result["Drug Class"] and class_out:
                 result["Drug Class"] = class_out
@@ -438,19 +437,18 @@ def _resolve_drug(code_system: str, med_code: str,
             return _drug_info_api_only(
                 api["generic_name"], brand, api.get("drug_class", ""),
                 f"RxNorm API (RXCUI {api_rxcui})", dosage, strength_form,
-                data_source=f"RxNorm API only — not in local dict. Add to medication_dictionary.json.",
+                data_source="RxNorm API only",
             )
 
         # API failed — name-only fallback
         name_key, nm_brand, _ = _dual_lookup("", name_candidates)
         if name_key:
-            note = f"Local Dict name match (RxNorm API failed: {api_error})"
-            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand, note)
+            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand,
+                                        "Local Dict (RxNorm offline)")
 
         return _drug_info_unknown(
             name_candidates[0] if name_candidates else med_code, dosage,
-            f"Not found. RxNorm API: {api_error or 'unavailable'}. "
-            "Not in local dictionary. Add to medication_dictionary.json."
+            f"Not found. RxNorm API: {api_error or 'unavailable'}. Not in local dictionary."
         )
 
     # ── NDC path ─────────────────────────────────────────────────────────────
@@ -472,8 +470,7 @@ def _resolve_drug(code_system: str, med_code: str,
                 entry     = DRUG_DICT[dict_key]
                 brand_out = brand_matched or brand_from_ndc or (entry.get("brand_names") or [""])[0]
                 class_out = entry.get("drug_class") or class_from_ndc
-                rxcui_ref = f"RXCUI {api_rxcui}" if api_rxcui else "name"
-                source    = f"NDC API (NDC {med_code}, {rxcui_ref}) + Local Dict [{match_note}]"
+                source    = "NDC API + Local Dict"
                 result    = _drug_info_from_dict(dict_key, dosage, strength_from_ndc, brand_out, source)
                 if not result["Drug Class"] and class_out:
                     result["Drug Class"] = class_out
@@ -483,15 +480,15 @@ def _resolve_drug(code_system: str, med_code: str,
             return _drug_info_api_only(
                 generic_from_ndc, brand_from_ndc, class_from_ndc,
                 f"openFDA NDC API (NDC {med_code})", dosage, strength_from_ndc,
-                data_source=f"NDC API only — not in local dict. Add to medication_dictionary.json.",
+                data_source="NDC API only",
             )
 
         # NDC API failed — name fallback
         ndc_error = ndc_result.get("error", "not found")
         name_key, nm_brand, _ = _dual_lookup("", name_candidates)
         if name_key:
-            note = f"Local Dict name match (NDC API failed: {ndc_error})"
-            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand, note)
+            return _drug_info_from_dict(name_key, dosage, strength_form, nm_brand,
+                                        "Local Dict (NDC offline)")
 
         return _drug_info_unknown(
             name_candidates[0] if name_candidates else med_code, dosage,
@@ -502,7 +499,7 @@ def _resolve_drug(code_system: str, med_code: str,
     name_key, brand_matched, match_note = _dual_lookup("", name_candidates)
     if name_key:
         return _drug_info_from_dict(name_key, dosage, strength_form, brand_matched,
-                                    f"Local Dictionary [{match_note}]")
+                                    "Local Dict")
     return _drug_info_unknown(
         name_candidates[0] if name_candidates else "", dosage,
         "Medication not recognized. Add to medication_dictionary.json.",

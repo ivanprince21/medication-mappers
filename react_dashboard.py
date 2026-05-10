@@ -89,7 +89,7 @@ def _compute_data(df: pd.DataFrame) -> dict:
         hcc_cols = [c for c in [f"HCC Category (ICD {i})" for i in range(1, 5)] if c in df.columns]
         if hcc_cols:
             combined = pd.concat([_clean(df[c]) for c in hcc_cols], ignore_index=True)
-            combined = combined[~combined.isin(["N/A", "Not mapped"])]
+            combined = combined[~combined.isin(["N/A", "Not mapped", "No HCC", ""])]
             vc = combined.value_counts().head(10).reset_index()
             vc.columns = ["name", "value"]
             data["top_hcc"] = vc.sort_values("value", ascending=True).to_dict(orient="records")
