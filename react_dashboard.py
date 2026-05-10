@@ -296,13 +296,28 @@ td{padding:7px 10px;border-bottom:1px solid #e5edf5}
 # ─────────────────────────────────────────────────────────────────────────────
 # NOTE: this is a plain string — no Python f-string, so { } are literal JS
 _JS_TEMPLATE = r"""
-/* CDNs: jsDelivr is more reliable than unpkg for UMD bundles.
-   recharts@2.1.12 is the last version confirmed to ship umd/Recharts.js */
-var _cdns = [
+/* ── CDN loader ─────────────────────────────────────────────────────────────
+   React / ReactDOM / htm are loaded sequentially (reliable CDNs, no issues).
+   Recharts has historically returned 200 HTML pages instead of JS on some CDN
+   paths — so we try 6 different CDN+version combinations in sequence, checking
+   typeof Recharts after each attempt before moving on.
+   If every Recharts URL fails we still render the KPI cards + table (no charts).
+*/
+
+var _baseCdns = [
   'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
   'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
+];
+var _htmCdn = 'https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js';
+
+/* Multiple Recharts fallbacks — different CDNs and versions */
+var _rechartsUrls = [
   'https://cdn.jsdelivr.net/npm/recharts@2.1.12/umd/Recharts.js',
-  'https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js'
+  'https://unpkg.com/recharts@2.1.12/umd/Recharts.js',
+  'https://cdn.jsdelivr.net/npm/recharts@2.5.0/umd/Recharts.js',
+  'https://unpkg.com/recharts@2.5.0/umd/Recharts.js',
+  'https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.js',
+  'https://unpkg.com/recharts@2.12.7/umd/Recharts.js',
 ];
 
 function showErr(msg) {
@@ -319,18 +334,48 @@ function loadNext(list, idx, onDone) {
   document.head.appendChild(s);
 }
 
-loadNext(_cdns, 0, function() {
+/* Try each Recharts URL in order; proceed even if all fail (charts hidden) */
+function loadRecharts(onDone) {
+  function tryNext(idx) {
+    if (idx >= _rechartsUrls.length) {
+      onDone(false);   /* no Recharts — graceful degradation */
+      return;
+    }
+    var s = document.createElement('script');
+    s.src = _rechartsUrls[idx];
+    s.onload = function() {
+      /* small timeout so the global has a chance to be set */
+      setTimeout(function() {
+        if (typeof Recharts !== 'undefined') { onDone(true); }
+        else { tryNext(idx + 1); }
+      }, 20);
+    };
+    s.onerror = function() { tryNext(idx + 1); };
+    document.head.appendChild(s);
+  }
+  tryNext(0);
+}
+
+/* Boot sequence: base CDNs → Recharts (with fallbacks) → htm → app */
+loadNext(_baseCdns, 0, function() {
+  loadRecharts(function(rechartsOk) {
+    loadNext([_htmCdn], 0, function() {
+      _bootApp(rechartsOk);
+    });
+  });
+});
+
+function _bootApp(rechartsOk) {
   try {
-    /* Defensive: verify all globals loaded (unpkg sometimes 404s silently) */
+    /* Defensive globals check */
     if (typeof React === 'undefined')    { showErr('React CDN failed to load.');    return; }
     if (typeof ReactDOM === 'undefined') { showErr('ReactDOM CDN failed to load.'); return; }
-    if (typeof Recharts === 'undefined') { showErr('Recharts CDN failed to load. Try refreshing — CDN may be temporarily unavailable.'); return; }
     if (typeof htm === 'undefined')      { showErr('htm CDN failed to load.');      return; }
 
     var html = htm.bind(React.createElement);
     var useState  = React.useState;
     var useMemo   = React.useMemo;
-    var RC = Recharts;
+    var RC = rechartsOk ? Recharts : null;
 
     var COLORS = ['#003153','#1863dc','#29b6f6','#0a4a7a','#4a9fd4','#7dc0e8','#f0a500','#e05c2a',
                   '#6366f1','#ec4899','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6'];
@@ -545,6 +590,20 @@ loadNext(_cdns, 0, function() {
 
           <div class="body space-y">
 
+            <!-- Charts unavailable banner (shown only when Recharts CDN failed) -->
+            ${!RC && html`
+              <div style=${{background:'#fff8e1',border:'1px solid #f0a500',borderLeft:'4px solid #f0a500',
+                            borderRadius:'8px',padding:'10px 16px',fontSize:'.82rem',color:'#5d4037'}}>
+                ⚠️ <strong>Charts could not load</strong> — Recharts CDN unavailable (tried 6 URLs).
+                KPI summary and data table are fully functional.
+                <span style=${{marginLeft:'8px'}}>
+                  <a href="javascript:location.reload()" style=${{color:'#1863dc',fontWeight:600}}>
+                    Click here to retry
+                  </a>
+                </span>
+              </div>
+            `}
+
             <!-- KPI Row -->
             <div class="grid4">
               <${KPICard} title="Total Records"          value=${kpi.total||0}          color="#003153" icon="📋" />
@@ -553,8 +612,9 @@ loadNext(_cdns, 0, function() {
               <${KPICard} title="High Value HCC Flagged" value=${kpi.high_hcc||0}        color="#e05c2a" icon="🏷️" />
             </div>
 
+            <!-- Charts (rows 1-4) — only rendered when Recharts CDN loaded -->
             <!-- Row 1: Confidence | Manual Review | HCC Flag -->
-            <div class="grid3">
+            ${RC && html`<div class="grid3">
 
               <${Card} title="Confidence Level — click to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${220}>
@@ -610,10 +670,9 @@ loadNext(_cdns, 0, function() {
                 <//>
               <//>
 
-            </div>
+            </div>`}
 
-            <!-- Row 2: Top 20 Meds | Top 10 HCC Categories -->
-            <div class="grid2">
+            ${RC && html`<div class="grid2">
 
               <${Card} title="Top 20 Medications — click bar to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${420}>
@@ -647,10 +706,9 @@ loadNext(_cdns, 0, function() {
                 <//>
               <//>
 
-            </div>
+            </div>`}
 
-            <!-- Row 3: Top 15 ICD Codes | Drug Class -->
-            <div class="grid2">
+            ${RC && html`<div class="grid2">
 
               <${Card} title="Top 15 ICD-10-CM Codes — click bar to filter">
                 ${topIcd.length === 0
@@ -697,10 +755,9 @@ loadNext(_cdns, 0, function() {
                 `}
               <//>
 
-            </div>
+            </div>`}
 
-            <!-- Date Trend -->
-            <${Card} title="Record Count by Date of Service">
+            ${RC && html`<${Card} title="Record Count by Date of Service">
               <${RC.ResponsiveContainer} width="100%" height=${220}>
                 <${RC.LineChart} data=${dateTrend} margin=${{top:5,right:20,left:0,bottom:40}}>
                   <${RC.CartesianGrid} strokeDasharray="3 3" />
@@ -713,6 +770,7 @@ loadNext(_cdns, 0, function() {
                 <//>
               <//>
             <//>
+            `}
 
             <!-- Data Table -->
             <${Card} title="Detailed Records — Filterable, Sortable & Exportable">
@@ -860,7 +918,7 @@ loadNext(_cdns, 0, function() {
   } catch(e) {
     showErr(e.toString() + '\n\nStack:\n' + (e.stack||''));
   }
-});
+}
 """
 
 
