@@ -71,18 +71,14 @@ def _normalize_ndc(raw: str) -> list[str]:
     d = digits_only
 
     if len(d) == 11:
-        # Standard modern format: 5-4-2
+        # 11-digit NDC: always 5-4-2, no digits dropped
         candidates.append(f"{d[0:5]}-{d[5:9]}-{d[9:11]}")
-        # Also try stripping leading zero to get 10-digit then dash it
-        d10 = d[1:]  # drop leading zero
-        candidates.append(f"{d10[0:4]}-{d10[4:8]}-{d10[8:10]}")  # 4-4-2
-        candidates.append(f"{d10[0:5]}-{d10[5:8]}-{d10[8:10]}")  # 5-3-2
     elif len(d) == 10:
-        # Three standard 10-digit splits
+        # 10-digit NDC: three possible labeler/product splits used by different manufacturers
         candidates.append(f"{d[0:4]}-{d[4:8]}-{d[8:10]}")   # 4-4-2
         candidates.append(f"{d[0:5]}-{d[5:8]}-{d[8:10]}")   # 5-3-2
         candidates.append(f"{d[0:5]}-{d[5:9]}-{d[9:10]}")   # 5-4-1
-        # Also try zero-padded to 11 then split 5-4-2
+        # Also try zero-padded to 11 then 5-4-2
         d11 = "0" + d
         candidates.append(f"{d11[0:5]}-{d11[5:9]}-{d11[9:11]}")
 
