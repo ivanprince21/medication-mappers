@@ -718,7 +718,7 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
 
     if run_struct and df_input is not None:
         try:
-            with st.spinner(f"Processing {len(df_input):,} rows — RxNorm/NDC rows query external APIs…"):
+            with st.spinner(f"Processing {len(df_input):,} rows — deduplicating codes and querying APIs in parallel…"):
                 result_df = parse_structured_dataframe(df_input)
             st.session_state["results_df"]      = result_df
             st.session_state["results_mode"]    = "structured"

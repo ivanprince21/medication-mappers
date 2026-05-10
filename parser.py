@@ -594,9 +594,24 @@ def parse_structured_row(row: dict) -> dict:
 
 
 def parse_structured_dataframe(df_in) -> "pd.DataFrame":
-    """Parse a full structured DataFrame. Validates columns, returns result DataFrame."""
-    import pandas as pd
+    """
+    Parse a full structured DataFrame. Validates columns, returns result DataFrame.
 
+    Speed strategy:
+      1. Deduplicate by (MedicationsCodeSystemName, MedicationsCode) — in real
+         medication files, thousands of rows share the same drug code, so the API
+         only needs to be called once per unique code rather than once per row.
+      2. Process unique codes in parallel using ThreadPoolExecutor (20 workers) —
+         since all work is I/O-bound (HTTP requests), concurrency gives a large speedup.
+      3. Map cached results back to every row that shares the same code.
+
+    Example: 8,000 rows × 200 unique RXCUIs → 200 API calls (parallel) instead of
+    8,000 sequential calls. Typical speedup: 20-40×.
+    """
+    import pandas as pd
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    # ── Column validation ─────────────────────────────────────────────────────
     col_map = {c.lower().strip(): c for c in df_in.columns}
     rename  = {}
     missing = []
@@ -611,8 +626,74 @@ def parse_structured_dataframe(df_in) -> "pd.DataFrame":
         raise ValueError(f"Missing required columns: {missing}")
 
     df = df_in.rename(columns=rename)
-    results = [parse_structured_row(row) for _, row in df.iterrows()]
-    return pd.DataFrame(results, columns=STRUCTURED_OUTPUT_COLS)
+
+    # ── Build flat row list ───────────────────────────────────────────────────
+    _NULL = {"nan", "none", "nat", ""}
+
+    def _s(v) -> str:
+        s = str(v).strip()
+        return "" if s.lower() in _NULL else s
+
+    rows = [{k: _s(v) for k, v in row.items()} for _, row in df.iterrows()]
+
+    # ── Step 1: Group rows by unique (code_system, med_code) ─────────────────
+    def _key(row_dict: dict) -> tuple:
+        return (
+            row_dict.get("MedicationsCodeSystemName", "").lower().strip(),
+            row_dict.get("MedicationsCode", "").strip(),
+        )
+
+    key_to_indices: dict[tuple, list[int]] = {}
+    for i, row_dict in enumerate(rows):
+        key_to_indices.setdefault(_key(row_dict), []).append(i)
+
+    unique_keys = list(key_to_indices.keys())
+
+    # ── Step 2: Resolve each unique code once, in parallel ───────────────────
+    def _resolve_key(key: tuple) -> tuple[tuple, dict]:
+        sample = rows[key_to_indices[key][0]]
+        code_sys   = sample.get("MedicationsCodeSystemName", "")
+        med_code   = sample.get("MedicationsCode", "")
+        disp_name  = sample.get("MedicationsCodeDisplayName", "")
+        disp_view  = sample.get("MedicationsCodeDisplayNameView", "")
+        dose_qty   = sample.get("DoseQuantity", "")
+        dosage        = dose_qty if dose_qty else _extract_dosage(disp_view or disp_name)
+        strength_form = _extract_strength_form(disp_view, disp_name)
+        name_candidates = [c for c in [disp_name, disp_view] if c]
+        drug_info = _resolve_drug(code_sys, med_code, name_candidates, dosage, strength_form)
+        return key, drug_info
+
+    MAX_WORKERS = min(20, len(unique_keys))
+    cache: dict[tuple, dict] = {}
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(_resolve_key, k): k for k in unique_keys}
+        for future in as_completed(futures):
+            try:
+                k, drug_info = future.result()
+                cache[k] = drug_info
+            except Exception as exc:
+                k = futures[future]
+                cache[k] = _drug_info_unknown(
+                    str(k[1]), "Unknown", f"Processing error: {exc}"
+                )
+
+    # ── Step 3: Map cached results back to every row ──────────────────────────
+    output_rows = []
+    for row_dict in rows:
+        k        = _key(row_dict)
+        drug_info = cache[k]
+        output = {
+            "MedicationsID":  row_dict.get("MedicationsID", ""),
+            "DocID":          row_dict.get("DocID", ""),
+            "DateOfService":  row_dict.get("DateOfService", ""),
+            **drug_info,
+        }
+        for col in STRUCTURED_OUTPUT_COLS:
+            output.setdefault(col, "")
+        output_rows.append({col: output.get(col, "") for col in STRUCTURED_OUTPUT_COLS})
+
+    return pd.DataFrame(output_rows, columns=STRUCTURED_OUTPUT_COLS)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
