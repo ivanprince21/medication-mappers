@@ -9,6 +9,14 @@ Key reliability choices:
   - Inline CSS instead of Tailwind CDN  → zero external CSS dependency
   - Dynamic sequential script loading   → guaranteed order, visible errors
   - Version-pinned CDNs                 → no surprise breakage
+
+Extra-credit additions:
+  - Chart click → table drill-down filtering (toggle off by clicking again)
+  - Top 15 ICD-10 codes bar chart
+  - Drug class donut chart
+  - CSV export button in table header
+  - Drug class + data source + other ICD codes in table
+  - Active filter badge with clear button
 """
 
 import json
@@ -90,6 +98,54 @@ def _compute_data(df: pd.DataFrame) -> dict:
     except Exception:
         data["top_hcc"] = []
 
+    # Top 15 ICD-10 codes (across all 4 slots)
+    try:
+        icd_cols  = [c for c in [f"Possible ICD-10-CM Code {i}" for i in range(1, 5)] if c in df.columns]
+        desc_cols = [c for c in [f"ICD-10 Description {i}" for i in range(1, 5)] if c in df.columns]
+        if icd_cols:
+            all_icds = pd.concat([_clean(df[c]) for c in icd_cols], ignore_index=True)
+            skip = {"n/a", "not mapped", "unknown", "none", ""}
+            all_icds = all_icds[~all_icds.str.lower().isin(skip)]
+            vc = all_icds.value_counts().head(15).reset_index()
+            vc.columns = ["name", "value"]
+            # Try to attach a description to each code
+            code_to_desc: dict = {}
+            for icd_c, desc_c in zip(icd_cols, desc_cols):
+                pairs = df[[icd_c, desc_c]].dropna()
+                for _, row in pairs.iterrows():
+                    code = str(row[icd_c]).strip()
+                    desc = str(row[desc_c]).strip()
+                    if code and desc and code.lower() not in skip:
+                        code_to_desc.setdefault(code, desc)
+            records = []
+            for _, r in vc.iterrows():
+                records.append({
+                    "name":  r["name"],
+                    "value": int(r["value"]),
+                    "desc":  code_to_desc.get(r["name"], ""),
+                })
+            data["top_icd"] = sorted(records, key=lambda x: x["value"])
+        else:
+            data["top_icd"] = []
+    except Exception:
+        data["top_icd"] = []
+
+    # Drug class donut (try multiple possible column names)
+    try:
+        dc_col = next(
+            (c for c in df.columns if c.lower().replace(" ", "").replace("_", "") in
+             {"drugclass", "drugclassification", "therapeuticclass", "class"}),
+            None
+        )
+        if dc_col:
+            vc = _clean(df[dc_col]).value_counts().head(10).reset_index()
+            vc.columns = ["name", "value"]
+            data["drug_class"] = vc.to_dict(orient="records")
+        else:
+            data["drug_class"] = []
+    except Exception:
+        data["drug_class"] = []
+
     # Date trend
     try:
         if "DateOfService" in df.columns:
@@ -110,22 +166,28 @@ def _compute_data(df: pd.DataFrame) -> dict:
     except Exception:
         data["date_trend"] = []
 
-    # Table (vectorized)
+    # Table (vectorized) — extended columns
     try:
         col_map = {
             "id":   "MedicationsID",
             "doc":  "DocID",
             "dos":  "DateOfService",
             "med":  "Normalized Generic Name",
+            "cls":  next((c for c in df.columns if c.lower().replace(" ", "").replace("_", "") in
+                          {"drugclass", "drugclassification", "therapeuticclass", "class"}), ""),
             "conf": "Confidence Level",
             "hcc":  "High Value HCC Flag",
             "rev":  "Manual Review Flag",
-            "icd":  "Possible ICD-10-CM Code 1",
-            "desc": "ICD-10 Description 1",
+            "icd1": "Possible ICD-10-CM Code 1",
+            "desc1":"ICD-10 Description 1",
+            "icd2": "Possible ICD-10-CM Code 2",
+            "icd3": "Possible ICD-10-CM Code 3",
+            "icd4": "Possible ICD-10-CM Code 4",
+            "src":  "Data Source",
         }
         subset = {}
         for k, col in col_map.items():
-            if col in df.columns:
+            if col and col in df.columns:
                 s = df[col].fillna("").astype(str).str.strip()
                 s = s.where(~s.str.lower().isin(_NULL), "")
                 subset[k] = s.tolist()
@@ -177,6 +239,12 @@ body{font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#212121;fon
 .badge-unk{background:#f3f4f6;color:#4b5563}
 .badge-yes{background:#fee2e2;color:#991b1b}
 .badge-no{background:#d1fae5;color:#065f46}
+/* active chart filter banner */
+.chart-filter-bar{background:#eff6ff;border:1px solid #1863dc;border-left:4px solid #1863dc;
+  border-radius:8px;padding:8px 14px;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:center;gap:8px}
+.chart-filter-label{font-size:.82rem;color:#003153;font-weight:600}
+.chart-filter-hint{font-size:.75rem;color:#667;font-style:italic}
 /* table */
 .tbl-wrap{overflow-x:auto;margin-top:8px}
 table{width:100%;border-collapse:collapse;font-size:.8rem}
@@ -188,6 +256,9 @@ th:hover{background:rgba(255,255,255,.12)}
 tbody tr:nth-child(even){background:#f0f7ff}
 tbody tr:hover{background:#dbeafe}
 td{padding:7px 10px;border-bottom:1px solid #e5edf5}
+/* chart cursor pointer */
+.recharts-rectangle{cursor:pointer}
+.recharts-sector{cursor:pointer}
 /* filter bar */
 .filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center}
 .filter-bar input,.filter-bar select{
@@ -200,6 +271,10 @@ td{padding:7px 10px;border-bottom:1px solid #e5edf5}
   font-size:.8rem;background:#f8fafc;cursor:pointer;color:#003153;font-weight:600}
 .btn:hover{background:#eaf4fb}
 .btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-export{background:linear-gradient(135deg,#003153,#1863dc);color:#fff;
+  border:none;border-radius:999px;padding:5px 16px;
+  font-size:.8rem;cursor:pointer;font-weight:600}
+.btn-export:hover{background:linear-gradient(135deg,#1863dc,#29b6f6)}
 .row-count{font-size:.75rem;color:#667;margin-bottom:6px}
 .pagination{display:flex;justify-content:space-between;align-items:center;
   margin-top:12px}
@@ -207,6 +282,10 @@ td{padding:7px 10px;border-bottom:1px solid #e5edf5}
 .space-y>*+*{margin-top:16px}
 .hcc-yes{color:#c2410c;font-weight:600}
 .hcc-no{color:#9ca3af}
+.src-tag{font-size:.7rem;background:#f0f7ff;color:#1863dc;
+  padding:1px 8px;border-radius:999px;border:1px solid #c5d8ef}
+.other-icds{font-family:monospace;font-size:.72rem;color:#556}
+.tbl-header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 """
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -238,12 +317,35 @@ function loadNext(list, idx, onDone) {
 loadNext(_cdns, 0, function() {
   try {
     var html = htm.bind(React.createElement);
-    var useState = React.useState;
-    var useMemo  = React.useMemo;
+    var useState  = React.useState;
+    var useMemo   = React.useMemo;
     var RC = Recharts;
 
-    var COLORS = ['#003153','#1863dc','#29b6f6','#0a4a7a','#4a9fd4','#7dc0e8','#f0a500','#e05c2a'];
+    var COLORS = ['#003153','#1863dc','#29b6f6','#0a4a7a','#4a9fd4','#7dc0e8','#f0a500','#e05c2a',
+                  '#6366f1','#ec4899','#10b981','#f59e0b','#ef4444','#8b5cf6','#14b8a6'];
     var PAGE = 50;
+
+    /* ── CSV export ── */
+    function exportCSV(rows, filename) {
+      var headers = ['DocID','Date','Generic Name','Drug Class','Confidence',
+                     'HCC Flag','Manual Review','ICD-10 Code 1','Description 1',
+                     'ICD-10 Code 2','ICD-10 Code 3','ICD-10 Code 4','Data Source'];
+      var lines = [headers.join(',')];
+      rows.forEach(function(r) {
+        var vals = [r.doc,r.dos,r.med,r.cls,r.conf,r.hcc,r.rev,
+                    r.icd1,r.desc1,r.icd2,r.icd3,r.icd4,r.src];
+        lines.push(vals.map(function(v){
+          return '"' + (v||'').replace(/"/g,'""') + '"';
+        }).join(','));
+      });
+      var blob = new Blob([lines.join('\n')], {type:'text/csv'});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      a.href   = url;
+      a.download = filename || 'medication_results.csv';
+      a.click();
+      URL.revokeObjectURL(url);
+    }
 
     /* ── KPI Card ── */
     function KPICard(p) {
@@ -276,72 +378,150 @@ loadNext(_cdns, 0, function() {
       return html`<span> ${p.dir === 'asc' ? '↑' : '↓'}</span>`;
     }
 
+    /* ── Custom Tooltip for ICD chart (shows description) ── */
+    function IcdTooltip(p) {
+      if (!p.active || !p.payload || !p.payload.length) return null;
+      var entry = p.payload[0].payload;
+      return html`
+        <div style=${{background:'#fff',border:'1px solid #c5d8ef',borderRadius:'8px',
+                      padding:'8px 12px',maxWidth:'260px',boxShadow:'0 2px 8px rgba(0,0,0,.12)'}}>
+          <div style=${{fontWeight:700,color:'#003153',fontSize:'.82rem'}}>${entry.name}</div>
+          ${entry.desc && html`<div style=${{fontSize:'.75rem',color:'#556',marginTop:'3px'}}>${entry.desc}</div>`}
+          <div style=${{color:'#1863dc',fontWeight:600,marginTop:'4px'}}>${entry.value} records</div>
+        </div>`;
+    }
+
     /* ══ Main Dashboard ══ */
     function Dashboard(p) {
       var d = p.data;
-      var kpi       = d.kpi       || {};
-      var confidence= d.confidence|| [];
-      var topMeds   = d.top_meds  || [];
-      var review    = d.review    || [];
-      var hccFlags  = d.hcc_flags || [];
-      var topHcc    = d.top_hcc   || [];
-      var dateTrend = d.date_trend|| [];
-      var table     = d.table     || [];
+      var kpi        = d.kpi        || {};
+      var confidence = d.confidence || [];
+      var topMeds    = d.top_meds   || [];
+      var review     = d.review     || [];
+      var hccFlags   = d.hcc_flags  || [];
+      var topHcc     = d.top_hcc    || [];
+      var topIcd     = d.top_icd    || [];
+      var drugClass  = d.drug_class || [];
+      var dateTrend  = d.date_trend || [];
+      var table      = d.table      || [];
 
-      var _s = useState('');   var search = _s[0];   var setSearch = _s[1];
-      var _fc= useState('All');var filterConf=_fc[0]; var setFilterConf=_fc[1];
-      var _fr= useState('All');var filterRev=_fr[0];  var setFilterRev=_fr[1];
-      var _fh= useState('All');var filterHcc=_fh[0];  var setFilterHcc=_fh[1];
-      var _sc= useState(null); var sortCol=_sc[0];    var setSortCol=_sc[1];
-      var _sd= useState('asc');var sortDir=_sd[0];    var setSortDir=_sd[1];
-      var _pg= useState(0);    var page=_pg[0];       var setPage=_pg[1];
+      /* ─ filter state ─ */
+      var _s  = useState('');    var search      = _s[0];      var setSearch      = _s[1];
+      var _fc = useState('All'); var filterConf  = _fc[0];     var setFilterConf  = _fc[1];
+      var _fr = useState('All'); var filterRev   = _fr[0];     var setFilterRev   = _fr[1];
+      var _fh = useState('All'); var filterHcc   = _fh[0];     var setFilterHcc   = _fh[1];
+      var _sc = useState(null);  var sortCol     = _sc[0];     var setSortCol     = _sc[1];
+      var _sd = useState('asc'); var sortDir     = _sd[0];     var setSortDir     = _sd[1];
+      var _pg = useState(0);     var page        = _pg[0];     var setPage        = _pg[1];
+      /* chart drill-down: {col, value, label} or null */
+      var _cf = useState(null);  var chartFilter = _cf[0];     var setChartFilter = _cf[1];
 
+      /* ─ chart click handlers ─ */
+      function onBarClick(colName, labelPrefix) {
+        return function(chartData) {
+          if (!chartData || !chartData.activePayload) return;
+          var val = chartData.activePayload[0].payload.name;
+          if (chartFilter && chartFilter.col === colName && chartFilter.value === val) {
+            setChartFilter(null); // toggle off
+          } else {
+            setChartFilter({col: colName, value: val,
+                            label: (labelPrefix ? labelPrefix + ': ' : '') + val});
+          }
+          setPage(0);
+        };
+      }
+
+      function onPieClick(colName, labelPrefix) {
+        return function(entry) {
+          if (!entry || !entry.name) return;
+          if (chartFilter && chartFilter.col === colName && chartFilter.value === entry.name) {
+            setChartFilter(null);
+          } else {
+            setChartFilter({col: colName, value: entry.name,
+                            label: (labelPrefix ? labelPrefix + ': ' : '') + entry.name});
+          }
+          setPage(0);
+        };
+      }
+
+      /* ─ hcc filter options ─ */
       var hccOpts = useMemo(function() {
         var vals = {};
         table.forEach(function(r){ if(r.hcc) vals[r.hcc]=1; });
         return Object.keys(vals).sort();
       }, [table]);
 
+      /* ─ sort handler ─ */
       function handleSort(col) {
         if (sortCol === col) { setSortDir(function(d){ return d==='asc'?'desc':'asc'; }); }
         else { setSortCol(col); setSortDir('asc'); }
         setPage(0);
       }
 
+      /* ─ clear all filters ─ */
       function clearFilters() {
         setSearch(''); setFilterConf('All'); setFilterRev('All');
-        setFilterHcc('All'); setPage(0);
+        setFilterHcc('All'); setChartFilter(null); setPage(0);
       }
 
+      /* ─ filtered + sorted rows ─ */
       var filtered = useMemo(function() {
         var rows = table;
+        /* text search */
         var q = search.toLowerCase();
         if (q) rows = rows.filter(function(r){
-          return (r.med||'').toLowerCase().includes(q) ||
-                 (r.icd||'').toLowerCase().includes(q) ||
-                 (r.desc||'').toLowerCase().includes(q)||
-                 (r.doc||'').toLowerCase().includes(q);
+          return (r.med||'').toLowerCase().includes(q)  ||
+                 (r.icd1||'').toLowerCase().includes(q) ||
+                 (r.desc1||'').toLowerCase().includes(q)||
+                 (r.doc||'').toLowerCase().includes(q)  ||
+                 (r.cls||'').toLowerCase().includes(q);
         });
-        if (filterConf !== 'All') rows = rows.filter(function(r){ return r.conf===filterConf; });
-        if (filterRev  !== 'All') rows = rows.filter(function(r){ return r.rev===filterRev; });
-        if (filterHcc  !== 'All') rows = rows.filter(function(r){ return r.hcc===filterHcc; });
+        /* dropdown filters */
+        if (filterConf !== 'All') rows = rows.filter(function(r){ return r.conf === filterConf; });
+        if (filterRev  !== 'All') rows = rows.filter(function(r){ return r.rev  === filterRev;  });
+        if (filterHcc  !== 'All') rows = rows.filter(function(r){ return r.hcc  === filterHcc;  });
+        /* chart drill-down */
+        if (chartFilter) {
+          var col = chartFilter.col;
+          var val = (chartFilter.value || '').toLowerCase();
+          if (col === 'icd_any') {
+            rows = rows.filter(function(r){
+              return (r.icd1||'').toLowerCase() === val ||
+                     (r.icd2||'').toLowerCase() === val ||
+                     (r.icd3||'').toLowerCase() === val ||
+                     (r.icd4||'').toLowerCase() === val;
+            });
+          } else {
+            rows = rows.filter(function(r){
+              return (r[col]||'').toLowerCase() === val;
+            });
+          }
+        }
+        /* sort */
         if (sortCol) {
           var dir = sortDir;
           rows = rows.slice().sort(function(a,b){
             var cmp = String(a[sortCol]||'').localeCompare(String(b[sortCol]||''));
-            return dir==='asc'?cmp:-cmp;
+            return dir === 'asc' ? cmp : -cmp;
           });
         }
         return rows;
-      }, [table, search, filterConf, filterRev, filterHcc, sortCol, sortDir]);
+      }, [table, search, filterConf, filterRev, filterHcc, chartFilter, sortCol, sortDir]);
 
       var totalPages = Math.max(1, Math.ceil(filtered.length / PAGE));
       var pageRows   = filtered.slice(page * PAGE, (page+1) * PAGE);
 
+      /* ─ pie label ─ */
       var totalRev = review.reduce(function(s,r){ return s+r.value; }, 0) || 1;
       var pctLabel = function(entry) {
         return entry.name + ': ' + ((entry.value/totalRev)*100).toFixed(0) + '%';
       };
+
+      /* ─ active bar highlight helper ─ */
+      function barFill(col, name, defaultColor) {
+        if (!chartFilter || chartFilter.col !== col) return defaultColor;
+        return chartFilter.value === name ? defaultColor : 'rgba(0,0,0,.15)';
+      }
 
       return html`
         <div>
@@ -349,7 +529,7 @@ loadNext(_cdns, 0, function() {
           <!-- Header -->
           <div class="header">
             <h1>📊 Medication Analytics Dashboard</h1>
-            <p>Interactive post-processing insights</p>
+            <p>Interactive post-processing insights — click any chart bar or slice to drill down</p>
           </div>
 
           <div class="body space-y">
@@ -365,13 +545,16 @@ loadNext(_cdns, 0, function() {
             <!-- Row 1: Confidence | Manual Review | HCC Flag -->
             <div class="grid3">
 
-              <${Card} title="Confidence Level">
+              <${Card} title="Confidence Level — click to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${220}>
                   <${RC.PieChart}>
                     <${RC.Pie} data=${confidence} dataKey="value" nameKey="name"
-                      innerRadius=${55} outerRadius=${85} paddingAngle=${3}>
+                      innerRadius=${55} outerRadius=${85} paddingAngle=${3}
+                      onClick=${onPieClick('conf', 'Confidence')}>
                       ${confidence.map(function(e,i){
-                        return html`<${RC.Cell} key=${e.name} fill=${COLORS[i%COLORS.length]} />`;
+                        var active = !chartFilter || (chartFilter.col==='conf' && chartFilter.value===e.name);
+                        return html`<${RC.Cell} key=${e.name} fill=${COLORS[i%COLORS.length]}
+                          opacity=${active ? 1 : 0.25} />`;
                       })}
                     <//>
                     <${RC.Tooltip} />
@@ -380,13 +563,16 @@ loadNext(_cdns, 0, function() {
                 <//>
               <//>
 
-              <${Card} title="Manual Review Flag">
+              <${Card} title="Manual Review Flag — click to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${220}>
                   <${RC.PieChart}>
                     <${RC.Pie} data=${review} dataKey="value" nameKey="name"
-                      outerRadius=${85} label=${pctLabel} paddingAngle=${3}>
+                      outerRadius=${85} label=${pctLabel} paddingAngle=${3}
+                      onClick=${onPieClick('rev', 'Review')}>
                       ${review.map(function(e,i){
-                        return html`<${RC.Cell} key=${e.name} fill=${COLORS[i%COLORS.length]} />`;
+                        var active = !chartFilter || (chartFilter.col==='rev' && chartFilter.value===e.name);
+                        return html`<${RC.Cell} key=${e.name} fill=${COLORS[i%COLORS.length]}
+                          opacity=${active ? 1 : 0.25} />`;
                       })}
                     <//>
                     <${RC.Tooltip} />
@@ -395,14 +581,20 @@ loadNext(_cdns, 0, function() {
                 <//>
               <//>
 
-              <${Card} title="High Value HCC Flags">
+              <${Card} title="High Value HCC Flags — click to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${220}>
-                  <${RC.BarChart} data=${hccFlags} margin=${{top:5,right:8,left:0,bottom:40}}>
+                  <${RC.BarChart} data=${hccFlags} margin=${{top:5,right:8,left:0,bottom:40}}
+                    onClick=${onBarClick('hcc', 'HCC Flag')}>
                     <${RC.CartesianGrid} strokeDasharray="3 3" vertical=${false} />
                     <${RC.XAxis} dataKey="name" tick=${{fontSize:9,angle:-15,textAnchor:'end'}} interval=${0} />
                     <${RC.YAxis} tick=${{fontSize:10}} />
                     <${RC.Tooltip} />
-                    <${RC.Bar} dataKey="value" fill="#1863dc" radius=${[3,3,0,0]} />
+                    <${RC.Bar} dataKey="value" radius=${[3,3,0,0]}>
+                      ${hccFlags.map(function(e){
+                        return html`<${RC.Cell} key=${e.name}
+                          fill=${barFill('hcc', e.name, '#1863dc')} />`;
+                      })}
+                    <//>
                   <//>
                 <//>
               <//>
@@ -412,15 +604,21 @@ loadNext(_cdns, 0, function() {
             <!-- Row 2: Top 20 Meds | Top 10 HCC Categories -->
             <div class="grid2">
 
-              <${Card} title="Top 20 Medications by Record Count">
+              <${Card} title="Top 20 Medications — click bar to filter">
                 <${RC.ResponsiveContainer} width="100%" height=${420}>
                   <${RC.BarChart} layout="vertical" data=${topMeds}
-                    margin=${{top:0,right:20,left:0,bottom:0}}>
+                    margin=${{top:0,right:20,left:0,bottom:0}}
+                    onClick=${onBarClick('med', 'Medication')}>
                     <${RC.CartesianGrid} strokeDasharray="3 3" horizontal=${false} />
                     <${RC.XAxis} type="number" tick=${{fontSize:10}} />
                     <${RC.YAxis} type="category" dataKey="name" width=${155} tick=${{fontSize:11}} />
                     <${RC.Tooltip} />
-                    <${RC.Bar} dataKey="value" fill="#003153" radius=${[0,3,3,0]} />
+                    <${RC.Bar} dataKey="value" radius=${[0,3,3,0]}>
+                      ${topMeds.map(function(e){
+                        return html`<${RC.Cell} key=${e.name}
+                          fill=${barFill('med', e.name, '#003153')} />`;
+                      })}
+                    <//>
                   <//>
                 <//>
               <//>
@@ -436,6 +634,56 @@ loadNext(_cdns, 0, function() {
                     <${RC.Bar} dataKey="value" fill="#29b6f6" radius=${[0,3,3,0]} />
                   <//>
                 <//>
+              <//>
+
+            </div>
+
+            <!-- Row 3: Top 15 ICD Codes | Drug Class -->
+            <div class="grid2">
+
+              <${Card} title="Top 15 ICD-10-CM Codes — click bar to filter">
+                ${topIcd.length === 0
+                  ? html`<div style=${{color:'#9ca3af',fontSize:'.8rem',padding:'20px 0',textAlign:'center'}}>No ICD-10 codes in results</div>`
+                  : html`
+                  <${RC.ResponsiveContainer} width="100%" height=${400}>
+                    <${RC.BarChart} layout="vertical" data=${topIcd}
+                      margin=${{top:0,right:20,left:0,bottom:0}}
+                      onClick=${onBarClick('icd_any', 'ICD-10')}>
+                      <${RC.CartesianGrid} strokeDasharray="3 3" horizontal=${false} />
+                      <${RC.XAxis} type="number" tick=${{fontSize:10}} />
+                      <${RC.YAxis} type="category" dataKey="name" width=${80} tick=${{fontSize:11,fontFamily:'monospace'}} />
+                      <${RC.Tooltip} content=${html`<${IcdTooltip} />`} />
+                      <${RC.Bar} dataKey="value" radius=${[0,3,3,0]}>
+                        ${topIcd.map(function(e){
+                          return html`<${RC.Cell} key=${e.name}
+                            fill=${barFill('icd_any', e.name, '#4a9fd4')} />`;
+                        })}
+                      <//>
+                    <//>
+                  <//>
+                `}
+              <//>
+
+              <${Card} title=${drugClass.length > 0 ? 'Drug Class Distribution — click to filter' : 'Drug Class Distribution'}>
+                ${drugClass.length === 0
+                  ? html`<div style=${{color:'#9ca3af',fontSize:'.8rem',padding:'20px 0',textAlign:'center'}}>No drug class data in results</div>`
+                  : html`
+                  <${RC.ResponsiveContainer} width="100%" height=${400}>
+                    <${RC.PieChart}>
+                      <${RC.Pie} data=${drugClass} dataKey="value" nameKey="name"
+                        innerRadius=${60} outerRadius=${130} paddingAngle=${2}
+                        onClick=${onPieClick('cls', 'Drug Class')}>
+                        ${drugClass.map(function(e,i){
+                          var active = !chartFilter || (chartFilter.col==='cls' && chartFilter.value===e.name);
+                          return html`<${RC.Cell} key=${e.name} fill=${COLORS[i%COLORS.length]}
+                            opacity=${active ? 1 : 0.25} />`;
+                        })}
+                      <//>
+                      <${RC.Tooltip} />
+                      <${RC.Legend} iconSize=${10} wrapperStyle=${{fontSize:'11px'}} />
+                    <//>
+                  <//>
+                `}
               <//>
 
             </div>
@@ -456,10 +704,28 @@ loadNext(_cdns, 0, function() {
             <//>
 
             <!-- Data Table -->
-            <${Card} title="Detailed Records — Filterable & Sortable">
+            <${Card} title="Detailed Records — Filterable, Sortable & Exportable">
 
+              <!-- Active chart filter banner -->
+              ${chartFilter && html`
+                <div class="chart-filter-bar">
+                  <div>
+                    <span class="chart-filter-label">🔍 Chart filter active: </span>
+                    <span class="badge badge-med" style=${{marginLeft:'6px'}}>${chartFilter.label}</span>
+                    <span class="chart-filter-hint" style=${{marginLeft:'10px'}}>
+                      Click the same chart element again to remove
+                    </span>
+                  </div>
+                  <button class="btn" style=${{padding:'3px 12px',fontSize:'.75rem'}}
+                    onClick=${function(){ setChartFilter(null); setPage(0); }}>
+                    ✕ Clear
+                  </button>
+                </div>
+              `}
+
+              <!-- Filter bar -->
               <div class="filter-bar">
-                <input type="text" placeholder="🔍 Search name, ICD, description, DocID..."
+                <input type="text" placeholder="🔍 Search name, ICD, description, DocID, drug class…"
                   value=${search}
                   onInput=${function(e){ setSearch(e.target.value); setPage(0); }} />
                 <select value=${filterConf}
@@ -480,22 +746,30 @@ loadNext(_cdns, 0, function() {
                     return html`<option key=${v} value=${v}>${v}</option>`;
                   })}
                 </select>
-                <button class="btn" onClick=${clearFilters}>✕ Clear</button>
+                <button class="btn" onClick=${clearFilters}>✕ Clear All</button>
               </div>
 
-              <div class="row-count">
-                Showing ${pageRows.length} of ${filtered.length} records
-                (${table.length} total)
+              <!-- Row count + export -->
+              <div class="tbl-header-row">
+                <div class="row-count">
+                  Showing ${pageRows.length} of ${filtered.length} records
+                  (${table.length} total)
+                </div>
+                <button class="btn-export"
+                  onClick=${function(){ exportCSV(filtered, 'medication_results_filtered.csv'); }}>
+                  ⬇ Export CSV (${filtered.length} rows)
+                </button>
               </div>
 
               <div class="tbl-wrap">
                 <table>
                   <thead>
                     <tr>
-                      ${[['id','Med ID'],['doc','DocID'],['dos','Date'],
-                         ['med','Generic Name'],['conf','Confidence'],
+                      ${[['doc','DocID'],['dos','Date'],['med','Generic Name'],
+                         ['cls','Drug Class'],['conf','Confidence'],
                          ['hcc','HCC Flag'],['rev','Manual Review'],
-                         ['icd','ICD-10 Code']].map(function(c){
+                         ['icd1','ICD-10 Code'],['desc1','Description'],
+                         ['src','Source']].map(function(c){
                         return html`
                           <th key=${c[0]} onClick=${function(){ handleSort(c[0]); }}>
                             ${c[1]}<${Arrow} col=${c[0]} cur=${sortCol} dir=${sortDir} />
@@ -505,12 +779,21 @@ loadNext(_cdns, 0, function() {
                   </thead>
                   <tbody>
                     ${pageRows.map(function(row, i){
+                      var otherIcds = [row.icd2, row.icd3, row.icd4]
+                        .filter(function(x){ return x && x.trim(); })
+                        .join(', ');
                       return html`
                         <tr key=${i}>
-                          <td style="color:#9ca3af;font-size:.75rem">${row.id}</td>
                           <td style="font-weight:600">${row.doc}</td>
                           <td style="white-space:nowrap">${row.dos}</td>
-                          <td style="font-weight:500">${row.med}</td>
+                          <td style="font-weight:500">
+                            ${row.med}
+                            ${otherIcds && html`
+                              <div class="other-icds" title=${otherIcds}>
+                                + ${otherIcds}
+                              </div>`}
+                          </td>
+                          <td style="font-size:.75rem;color:#667">${row.cls || '—'}</td>
                           <td><${ConfBadge} v=${row.conf} /></td>
                           <td class=${row.hcc&&row.hcc.startsWith('YES')?'hcc-yes':'hcc-no'}>
                             ${row.hcc}
@@ -522,11 +805,16 @@ loadNext(_cdns, 0, function() {
                               ? html`<span class="badge badge-no">No</span>`
                               : html`<span style="color:#9ca3af">${row.rev}</span>`}
                           </td>
-                          <td style="font-family:monospace;font-size:.78rem">${row.icd}</td>
+                          <td style="font-family:monospace;font-size:.78rem">${row.icd1}</td>
+                          <td style="max-width:200px;white-space:nowrap;overflow:hidden;
+                               text-overflow:ellipsis" title=${row.desc1}>${row.desc1}</td>
+                          <td>
+                            ${row.src && html`<span class="src-tag">${row.src.replace(' (lookup)', '')}</span>`}
+                          </td>
                         </tr>`;
                     })}
                     ${pageRows.length===0 && html`
-                      <tr><td colSpan=${8}
+                      <tr><td colSpan=${10}
                         style="text-align:center;padding:32px;color:#9ca3af">
                         No records match your filters.
                       </td></tr>`}
@@ -597,5 +885,5 @@ def _build_html(data: dict) -> str:
 def render_react_dashboard(df: pd.DataFrame) -> None:
     """Render the React analytics dashboard from the processed results DataFrame."""
     data = _compute_data(df)
-    html = _build_html(data)
-    components.html(html, height=2950, scrolling=True)
+    html_str = _build_html(data)
+    components.html(html_str, height=3400, scrolling=True)
