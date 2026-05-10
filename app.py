@@ -745,6 +745,7 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
             st.session_state["run_datetime"]    = datetime.utcnow()
             st.session_state["run_file_name"]   = struct_file.name if struct_file else ""
             st.session_state["run_row_count"]   = len(result_df)
+            st.session_state.pop("drill_filter", None)
             st.success(f"✔  Done — {len(result_df):,} rows processed.")
         except ValueError as e:
             st.error(str(e))
@@ -914,7 +915,40 @@ if "results_df" in st.session_state:
     if f_src != "All" and "Data Source" in display_df.columns:
         display_df = display_df[display_df["Data Source"] == f_src]
 
-    st.caption(f"Showing **{len(display_df):,}** of **{total:,}** rows")
+    # ── Drill-down filter (from chart click) ──────────────────────────────────
+    drill = st.session_state.get("drill_filter")
+    if drill:
+        import re as _re
+        drill_val  = drill["value"]
+        drill_cols = [c for c in drill["columns"] if c in display_df.columns]
+        drill_label = drill.get("label", drill_val)
+
+        if drill_cols:
+            # Build OR mask across all target columns
+            mask = pd.Series(False, index=display_df.index)
+            for col in drill_cols:
+                mask |= display_df[col].astype(str).str.contains(
+                    _re.escape(drill_val), case=False, na=False
+                )
+            display_df = display_df[mask]
+
+        # Active filter banner
+        st.markdown(f"""
+<div style="background:#eaf4fb; border:1px solid #1863dc; border-left:4px solid #1863dc;
+     border-radius:8px; padding:0.55rem 1rem; margin-bottom:0.6rem;
+     display:flex; justify-content:space-between; align-items:center;">
+  <div style="color:#003153; font-size:0.84rem;">
+    🔍 <strong>Drill-down active:</strong> &nbsp;<em>{drill_label}</em>
+    &nbsp;·&nbsp; <span style="color:#556677;">Click the same bar/slice again to clear,
+    or use the button →</span>
+  </div>
+</div>""", unsafe_allow_html=True)
+        if st.button("✕  Clear drill-down filter", key="clear_drill"):
+            st.session_state.pop("drill_filter", None)
+            st.rerun()
+
+    st.caption(f"Showing **{len(display_df):,}** of **{total:,}** rows"
+               + (f" · drill-down: **{drill['label']}**" if drill else ""))
 
     col_cfg = {
         "Manual Review Flag":           st.column_config.TextColumn(width="small"),

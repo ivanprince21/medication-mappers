@@ -136,12 +136,7 @@ def chart_manual_review(df: pd.DataFrame) -> go.Figure:
 # ── 6. High Value HCC Flags ───────────────────────────────────────────────────
 def chart_hcc_flag(df: pd.DataFrame) -> go.Figure:
     col = "High Value HCC Flag"
-    series = _clean(df.get(col, pd.Series(dtype=str)))
-    # Normalize: group all "YES — ..." variants into "High Value HCC"
-    series = series.apply(
-        lambda v: "High Value HCC" if str(v).upper().startswith("YES") else v
-    )
-    counts = series.value_counts()
+    counts = _clean(df.get(col, pd.Series(dtype=str))).value_counts()
     fig = go.Figure(go.Pie(
         labels=counts.index.tolist(),
         values=counts.values.tolist(),
@@ -250,13 +245,64 @@ _CARD_CSS = """
 </style>
 """
 
-def _chart_card(fig_fn, df, *args, **kwargs):
-    """Render a chart inside a styled card; silently show 'Not enough data' on error."""
+def _chart_card(fig_fn, df, chart_key: str, filter_cols: list[str],
+                point_attr: str = "y", *args, **kwargs):
+    """
+    Render a chart card with drill-down support.
+
+    Clicking a bar or pie slice stores a drill-down filter in
+    st.session_state["drill_filter"] which the results table reads.
+
+    Args:
+        fig_fn      : chart function to call
+        df          : results DataFrame
+        chart_key   : unique Streamlit key for this chart
+        filter_cols : DataFrame columns to match when this chart is clicked
+        point_attr  : "y" for horizontal bars, "label" for pie/donut,
+                      "x" for line/date charts
+    """
     st.markdown('<div class="dash-card">', unsafe_allow_html=True)
     try:
         fig = fig_fn(df, *args, **kwargs)
         if fig is not None:
-            st.plotly_chart(fig, use_container_width=True)
+            is_active = (
+                st.session_state.get("drill_filter", {}).get("source_chart") == chart_key
+            )
+            if is_active:
+                active_val = st.session_state["drill_filter"]["value"]
+                st.markdown(
+                    f"<div style='font-size:0.72rem; color:#1863dc; font-weight:600; "
+                    f"margin-bottom:4px;'>🔍 Filtered: <em>{active_val}</em></div>",
+                    unsafe_allow_html=True,
+                )
+            try:
+                event = st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    on_select="rerun",
+                    key=chart_key,
+                )
+                if event and hasattr(event, "selection") and event.selection.points:
+                    pt  = event.selection.points[0]
+                    val = pt.get(point_attr) or pt.get("y") or pt.get("label")
+                    if val is not None:
+                        val = str(val).strip()
+                        existing = st.session_state.get("drill_filter", {})
+                        # Toggle off if same chart + same value clicked again
+                        if (existing.get("source_chart") == chart_key
+                                and existing.get("value") == val):
+                            st.session_state.pop("drill_filter", None)
+                        else:
+                            st.session_state["drill_filter"] = {
+                                "value":        val,
+                                "columns":      filter_cols,
+                                "source_chart": chart_key,
+                                "label":        f"{fig_fn.__name__.replace('chart_','').replace('_',' ').title()}: {val}",
+                            }
+                        st.rerun()
+            except TypeError:
+                # Streamlit < 1.35 — render without drill-down
+                st.plotly_chart(fig, use_container_width=True, key=chart_key)
         else:
             st.caption("No data available for this chart.")
     except Exception:
@@ -264,9 +310,50 @@ def _chart_card(fig_fn, df, *args, **kwargs):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def _full_width_card(fig, chart_key: str, filter_cols: list[str],
+                     point_attr: str = "x"):
+    """Full-width version of _chart_card for date trend and member stats."""
+    st.markdown('<div class="dash-card">', unsafe_allow_html=True)
+    is_active = st.session_state.get("drill_filter", {}).get("source_chart") == chart_key
+    if is_active:
+        active_val = st.session_state["drill_filter"]["value"]
+        st.markdown(
+            f"<div style='font-size:0.72rem; color:#1863dc; font-weight:600; "
+            f"margin-bottom:4px;'>🔍 Filtered: <em>{active_val}</em></div>",
+            unsafe_allow_html=True,
+        )
+    try:
+        event = st.plotly_chart(fig, use_container_width=True,
+                                on_select="rerun", key=chart_key)
+        if event and hasattr(event, "selection") and event.selection.points:
+            pt  = event.selection.points[0]
+            val = pt.get(point_attr) or pt.get("y") or pt.get("label")
+            if val is not None:
+                val = str(val).strip()
+                existing = st.session_state.get("drill_filter", {})
+                if (existing.get("source_chart") == chart_key
+                        and existing.get("value") == val):
+                    st.session_state.pop("drill_filter", None)
+                else:
+                    st.session_state["drill_filter"] = {
+                        "value":        val,
+                        "columns":      filter_cols,
+                        "source_chart": chart_key,
+                        "label":        f"{chart_key.replace('drill_','').replace('_',' ').title()}: {val}",
+                    }
+                st.rerun()
+    except TypeError:
+        st.plotly_chart(fig, use_container_width=True, key=chart_key)
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 # ── Dashboard renderer ────────────────────────────────────────────────────────
 def render_analytics_dashboard(df: pd.DataFrame) -> None:
     """Render the full analytics dashboard inside a Streamlit expander."""
+
+    ICD_COLS = [f"Possible ICD-10-CM Code {i}" for i in range(1, 5)]
+    HCC_COLS = [f"HCC Category (ICD {i})" for i in range(1, 5)]
+    IND_COLS = [f"Possible Indication {i}" for i in range(1, 4)]
 
     with st.expander("📊  Analytics Dashboard — Charts & Insights", expanded=True):
         st.markdown(_CARD_CSS, unsafe_allow_html=True)
@@ -274,53 +361,55 @@ def render_analytics_dashboard(df: pd.DataFrame) -> None:
             "<div style='font-size:0.94rem; font-weight:700; color:#003153; "
             "border-bottom:2px solid #29b6f6; padding-bottom:5px; "
             "margin:0.2rem 0 1rem 0; letter-spacing:0.2px;'>"
-            "Interactive charts — hover for details, click legend to filter</div>",
+            "Click any bar or slice to drill down into the results table below</div>",
             unsafe_allow_html=True,
         )
 
         # Row 1 — Top Medications | Top ICD Codes | HCC Distribution
         r1c1, r1c2, r1c3 = st.columns(3)
         with r1c1:
-            _chart_card(chart_top_medications, df)
+            _chart_card(chart_top_medications, df,
+                        "drill_medications", ["Normalized Generic Name"], "y")
         with r1c2:
-            _chart_card(chart_top_icd_codes, df)
+            _chart_card(chart_top_icd_codes, df,
+                        "drill_icd", ICD_COLS, "y")
         with r1c3:
-            _chart_card(chart_hcc_distribution, df)
+            _chart_card(chart_hcc_distribution, df,
+                        "drill_hcc_dist", HCC_COLS, "y")
 
         # Row 2 — Confidence | Manual Review | HCC Flag
         r2c1, r2c2, r2c3 = st.columns(3)
         with r2c1:
-            _chart_card(chart_confidence_breakdown, df)
+            _chart_card(chart_confidence_breakdown, df,
+                        "drill_confidence", ["Confidence Level"], "label")
         with r2c2:
-            _chart_card(chart_manual_review, df)
+            _chart_card(chart_manual_review, df,
+                        "drill_review", ["Manual Review Flag"], "label")
         with r2c3:
-            _chart_card(chart_hcc_flag, df)
+            _chart_card(chart_hcc_flag, df,
+                        "drill_hcc_flag", ["High Value HCC Flag"], "label")
 
         # Row 3 — Data Source | Top Indications
         r3c1, r3c2 = st.columns(2)
         with r3c1:
-            _chart_card(chart_data_source, df)
+            _chart_card(chart_data_source, df,
+                        "drill_source", ["Data Source"], "y")
         with r3c2:
-            _chart_card(chart_top_indications, df)
+            _chart_card(chart_top_indications, df,
+                        "drill_indications", IND_COLS, "y")
 
         # Row 4 — Date Trend (full width, conditional)
-        date_fig = None
         try:
             date_fig = chart_date_trend(df)
+            if date_fig is not None:
+                _full_width_card(date_fig, "drill_date", ["DateOfService"], "x")
         except Exception:
             pass
-        if date_fig is not None:
-            st.markdown('<div class="dash-card">', unsafe_allow_html=True)
-            st.plotly_chart(date_fig, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
 
         # Row 5 — Member Stats (full width, conditional)
-        member_fig = None
         try:
             member_fig = chart_member_stats(df)
+            if member_fig is not None:
+                _full_width_card(member_fig, "drill_member", ["DocID"], "y")
         except Exception:
             pass
-        if member_fig is not None:
-            st.markdown('<div class="dash-card">', unsafe_allow_html=True)
-            st.plotly_chart(member_fig, use_container_width=True)
-            st.markdown("</div>", unsafe_allow_html=True)
