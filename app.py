@@ -614,7 +614,7 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
                 result_df = parse_structured_dataframe(df_input)
             st.session_state["results_df"]      = result_df
             st.session_state["results_mode"]    = "structured"
-            st.session_state["run_datetime"]    = datetime.now()
+            st.session_state["run_datetime"]    = datetime.utcnow()
             st.session_state["run_file_name"]   = struct_file.name if struct_file else ""
             st.session_state["run_row_count"]   = len(result_df)
             st.success(f"✔  Done — {len(result_df):,} rows processed.")
@@ -691,7 +691,7 @@ HCC enrichment runs on all resolved ICD codes automatically.
                     else:
                         st.session_state["results_df"]    = pd.DataFrame(results)
                         st.session_state["results_mode"]  = "freetext"
-                        st.session_state["run_datetime"]  = datetime.now()
+                        st.session_state["run_datetime"]  = datetime.utcnow()
                         st.session_state["run_file_name"] = "Free-text input"
                         st.session_state["run_row_count"] = len(results)
                 except Exception as e:
@@ -711,7 +711,7 @@ if "results_df" in st.session_state:
     st.markdown("---")
 
     # ── Run report banner ─────────────────────────────────────────────────────
-    run_dt_str = run_dt.strftime("%B %d, %Y  %I:%M:%S %p") if run_dt else "—"
+    run_dt_str = run_dt.strftime("%B %d, %Y  %I:%M:%S %p UTC") if run_dt else "—"
     st.markdown(f"""
 <div class="run-report-banner">
   <div>
