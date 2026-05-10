@@ -31,7 +31,6 @@ from rxnorm_client import check_api_available
 from ndc_client    import check_ndc_api_available
 from icd10_client  import lookup_description as _icd10_ping
 from version       import VERSION, RELEASE_DATE, CHANGELOG
-from analytics        import render_analytics_dashboard
 from react_dashboard  import render_react_dashboard
 
 # ── Page config ───────────────────────────────────────────────────────────────

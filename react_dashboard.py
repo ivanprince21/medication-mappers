@@ -108,15 +108,18 @@ def _compute_data(df: pd.DataFrame) -> dict:
             all_icds = all_icds[~all_icds.str.lower().isin(skip)]
             vc = all_icds.value_counts().head(15).reset_index()
             vc.columns = ["name", "value"]
-            # Try to attach a description to each code
+            # Attach a description to each code — vectorized (no iterrows)
             code_to_desc: dict = {}
             for icd_c, desc_c in zip(icd_cols, desc_cols):
-                pairs = df[[icd_c, desc_c]].dropna()
-                for _, row in pairs.iterrows():
-                    code = str(row[icd_c]).strip()
-                    desc = str(row[desc_c]).strip()
-                    if code and desc and code.lower() not in skip:
-                        code_to_desc.setdefault(code, desc)
+                tmp = df[[icd_c, desc_c]].copy()
+                tmp.columns = ["code", "desc"]
+                tmp = tmp.dropna(subset=["code", "desc"])
+                tmp["code"] = tmp["code"].astype(str).str.strip()
+                tmp["desc"] = tmp["desc"].astype(str).str.strip()
+                tmp = tmp[~tmp["code"].str.lower().isin(skip) & (tmp["desc"] != "")]
+                # setdefault equivalent: keep first desc seen per code
+                for code, desc in zip(tmp["code"], tmp["desc"]):
+                    code_to_desc.setdefault(code, desc)
             records = []
             for _, r in vc.iterrows():
                 records.append({
@@ -382,7 +385,7 @@ loadNext(_cdns, 0, function() {
 
     /* ── Sort arrow ── */
     function Arrow(p) {
-      if (p.col !== p.cur) return html`<span style="opacity:.3"> ↕</span>`;
+      if (p.col !== p.cur) return html`<span style=${{opacity:0.3}}> ↕</span>`;
       return html`<span> ${p.dir === 'asc' ? '↑' : '↓'}</span>`;
     }
 
@@ -792,16 +795,16 @@ loadNext(_cdns, 0, function() {
                         .join(', ');
                       return html`
                         <tr key=${i}>
-                          <td style="font-weight:600">${row.doc}</td>
-                          <td style="white-space:nowrap">${row.dos}</td>
-                          <td style="font-weight:500">
+                          <td style=${{fontWeight:600}}>${row.doc}</td>
+                          <td style=${{whiteSpace:'nowrap'}}>${row.dos}</td>
+                          <td style=${{fontWeight:500}}>
                             ${row.med}
                             ${otherIcds && html`
                               <div class="other-icds" title=${otherIcds}>
                                 + ${otherIcds}
                               </div>`}
                           </td>
-                          <td style="font-size:.75rem;color:#667">${row.cls || '—'}</td>
+                          <td style=${{fontSize:'.75rem',color:'#667'}}>${row.cls || '—'}</td>
                           <td><${ConfBadge} v=${row.conf} /></td>
                           <td class=${row.hcc&&row.hcc.startsWith('YES')?'hcc-yes':'hcc-no'}>
                             ${row.hcc}
@@ -811,11 +814,11 @@ loadNext(_cdns, 0, function() {
                               ? html`<span class="badge badge-yes">YES</span>`
                               : row.rev==='No'
                               ? html`<span class="badge badge-no">No</span>`
-                              : html`<span style="color:#9ca3af">${row.rev}</span>`}
+                              : html`<span style=${{color:'#9ca3af'}}>${row.rev}</span>`}
                           </td>
-                          <td style="font-family:monospace;font-size:.78rem">${row.icd1}</td>
-                          <td style="max-width:200px;white-space:nowrap;overflow:hidden;
-                               text-overflow:ellipsis" title=${row.desc1}>${row.desc1}</td>
+                          <td style=${{fontFamily:'monospace',fontSize:'.78rem'}}>${row.icd1}</td>
+                          <td style=${{maxWidth:'200px',whiteSpace:'nowrap',overflow:'hidden',
+                               textOverflow:'ellipsis'}} title=${row.desc1}>${row.desc1}</td>
                           <td>
                             ${row.src && html`<span class="src-tag">${row.src.replace(' (lookup)', '')}</span>`}
                           </td>
@@ -823,7 +826,7 @@ loadNext(_cdns, 0, function() {
                     })}
                     ${pageRows.length===0 && html`
                       <tr><td colSpan=${10}
-                        style="text-align:center;padding:32px;color:#9ca3af">
+                        style=${{textAlign:'center',padding:'32px',color:'#9ca3af'}}>
                         No records match your filters.
                       </td></tr>`}
                   </tbody>
@@ -867,7 +870,8 @@ loadNext(_cdns, 0, function() {
 def _build_html(data: dict) -> str:
     try:
         data_json = json.dumps(data, ensure_ascii=False, default=str)
-        data_json = data_json.replace("</script>", r"<\/script>")
+        # Replace < so any </script> variant (any case) cannot break the inline <script> block
+        data_json = data_json.replace("<", r"\u003c")
 
         return (
             "<!DOCTYPE html><html lang='en'><head>"

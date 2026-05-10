@@ -627,14 +627,14 @@ def parse_structured_dataframe(df_in) -> "pd.DataFrame":
 
     df = df_in.rename(columns=rename)
 
-    # ── Build flat row list ───────────────────────────────────────────────────
+    # ── Build flat row list (to_dict avoids iterrows float-coercion of ID cols) ─
     _NULL = {"nan", "none", "nat", ""}
 
     def _s(v) -> str:
         s = str(v).strip()
         return "" if s.lower() in _NULL else s
 
-    rows = [{k: _s(v) for k, v in row.items()} for _, row in df.iterrows()]
+    rows = [{k: _s(v) for k, v in row.items()} for row in df.to_dict("records")]
 
     # ── Step 1: Group rows by unique (code_system, med_code) ─────────────────
     def _key(row_dict: dict) -> tuple:
@@ -648,6 +648,10 @@ def parse_structured_dataframe(df_in) -> "pd.DataFrame":
         key_to_indices.setdefault(_key(row_dict), []).append(i)
 
     unique_keys = list(key_to_indices.keys())
+
+    # ── Edge case: empty file (only headers) ─────────────────────────────────
+    if not unique_keys:
+        return pd.DataFrame(columns=STRUCTURED_OUTPUT_COLS)
 
     # ── Step 2: Resolve each unique code once, in parallel ───────────────────
     def _resolve_key(key: tuple) -> tuple[tuple, dict]:
@@ -679,10 +683,24 @@ def parse_structured_dataframe(df_in) -> "pd.DataFrame":
                 )
 
     # ── Step 3: Map cached results back to every row ──────────────────────────
+    # Apply row-specific dosage/strength from each individual row so that rows
+    # sharing the same drug code but with different doses show their own values.
     output_rows = []
     for row_dict in rows:
-        k        = _key(row_dict)
-        drug_info = cache[k]
+        k         = _key(row_dict)
+        drug_info = dict(cache[k])   # shallow copy — don't mutate the shared cache entry
+
+        # Per-row dosage / strength override
+        dose_qty   = row_dict.get("DoseQuantity", "")
+        disp_view  = row_dict.get("MedicationsCodeDisplayNameView", "")
+        disp_name  = row_dict.get("MedicationsCodeDisplayName", "")
+        row_dosage = dose_qty if dose_qty else _extract_dosage(disp_view or disp_name)
+        row_strength = _extract_strength_form(disp_view, disp_name)
+        if row_dosage:
+            drug_info["Dosage"] = row_dosage
+        if row_strength:
+            drug_info["Strength / Form"] = row_strength
+
         output = {
             "MedicationsID":  row_dict.get("MedicationsID", ""),
             "DocID":          row_dict.get("DocID", ""),
