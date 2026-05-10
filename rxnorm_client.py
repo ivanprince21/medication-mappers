@@ -54,6 +54,29 @@ def check_api_available() -> bool:
         return False
 
 
+@lru_cache(maxsize=2048)
+def ndc_to_rxcui(ndc: str) -> str:
+    """
+    Look up RXCUI for an NDC code via RxNorm NDC status endpoint.
+    Covers all US-registered NDC codes (better coverage than openFDA).
+    Returns RXCUI string or "" if not found / API unavailable.
+
+    API: GET /REST/ndcstatus.json?ndc={ndc}
+    No API key needed. Free, maintained by NLM.
+    """
+    try:
+        r = requests.get(
+            f"{RXNAV_BASE}/ndcstatus.json",
+            params={"ndc": ndc},
+            timeout=TIMEOUT,
+        )
+        if r.status_code == 200:
+            return r.json().get("ndcStatus", {}).get("rxcui", "") or ""
+    except Exception:
+        pass
+    return ""
+
+
 @lru_cache(maxsize=512)
 def lookup_rxcui(rxcui: str) -> dict:
     """

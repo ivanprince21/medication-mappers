@@ -26,7 +26,7 @@ import re
 import json
 import os
 
-from rxnorm_client import extract_rxcui, lookup_rxcui
+from rxnorm_client import extract_rxcui, lookup_rxcui, ndc_to_rxcui
 from ndc_client    import lookup_ndc, NDC_SYSTEM_NAMES
 from hcc_lookup    import lookup_hcc_for_codes, has_high_value_hcc
 from icd10_client  import lookup_description, search_icd10_for_drug
@@ -453,17 +453,45 @@ def _resolve_drug(code_system: str, med_code: str,
 
     # ── NDC path ─────────────────────────────────────────────────────────────
     if sys_lower in NDC_SYSTEM_NAMES:
+        # ── Step 1: Try RxNorm NDC→RXCUI (best coverage for US NDC codes) ────
+        rxnorm_rxcui = ndc_to_rxcui(med_code)
+
+        if rxnorm_rxcui:
+            api = lookup_rxcui(rxnorm_rxcui)
+            if api["found"]:
+                all_name_candidates = [api["generic_name"]] + api.get("brand_names", []) + name_candidates
+                dict_key, brand_matched, match_note = _dual_lookup(rxnorm_rxcui, all_name_candidates)
+
+                if dict_key:
+                    entry     = DRUG_DICT[dict_key]
+                    api_brand = (api.get("brand_names") or [""])[0]
+                    brand_out = brand_matched or api_brand or (entry.get("brand_names") or [""])[0]
+                    class_out = entry.get("drug_class") or api.get("drug_class", "")
+                    source    = "RxNorm NDC + Local Dict"
+                    result    = _drug_info_from_dict(dict_key, dosage, strength_form, brand_out, source)
+                    if not result["Drug Class"] and class_out:
+                        result["Drug Class"] = class_out
+                    return result
+
+                # RXCUI resolved but drug not in local dict
+                brand = (api.get("brand_names") or [""])[0]
+                return _drug_info_api_only(
+                    api["generic_name"], brand, api.get("drug_class", ""),
+                    f"RxNorm (NDC→RXCUI {rxnorm_rxcui})", dosage, strength_form,
+                    data_source="RxNorm NDC API",
+                )
+
+        # ── Step 2: Fall back to openFDA NDC API ─────────────────────────────
         ndc_result = lookup_ndc(med_code)
 
         if ndc_result["found"]:
-            api_rxcui         = ndc_result.get("rxcui", "")   # RXCUI from openFDA openfda section
+            api_rxcui         = ndc_result.get("rxcui", "")
             generic_from_ndc  = ndc_result["generic_name"]
             brand_from_ndc    = ndc_result["brand_name"]
             class_from_ndc    = ndc_result.get("dosage_form", "")
             strength_from_ndc = strength_form or class_from_ndc
 
             all_name_candidates = [generic_from_ndc] + name_candidates
-
             dict_key, brand_matched, match_note = _dual_lookup(api_rxcui, all_name_candidates)
 
             if dict_key:
@@ -476,14 +504,13 @@ def _resolve_drug(code_system: str, med_code: str,
                     result["Drug Class"] = class_out
                 return result
 
-            # NDC resolved but not in local dict
             return _drug_info_api_only(
                 generic_from_ndc, brand_from_ndc, class_from_ndc,
                 f"openFDA NDC API (NDC {med_code})", dosage, strength_from_ndc,
                 data_source="NDC API only",
             )
 
-        # NDC API failed — name fallback
+        # ── Step 3: Both APIs failed — name fallback ──────────────────────────
         ndc_error = ndc_result.get("error", "not found")
         name_key, nm_brand, _ = _dual_lookup("", name_candidates)
         if name_key:
