@@ -31,7 +31,8 @@ from rxnorm_client import check_api_available
 from ndc_client    import check_ndc_api_available
 from icd10_client  import lookup_description as _icd10_ping
 from version       import VERSION, RELEASE_DATE, CHANGELOG
-from analytics     import render_analytics_dashboard
+from analytics        import render_analytics_dashboard
+from react_dashboard  import render_react_dashboard
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -883,8 +884,8 @@ if "results_df" in st.session_state:
 
     st.markdown("<div style='margin-bottom:0.5rem'></div>", unsafe_allow_html=True)
 
-    # ── Analytics Dashboard ───────────────────────────────────────────────────
-    render_analytics_dashboard(df)
+    # ── React Analytics Dashboard (from processed results) ───────────────────
+    render_react_dashboard(df)
 
     # ── Filters ───────────────────────────────────────────────────────────────
     st.markdown('<div class="section-header">Filter Results</div>', unsafe_allow_html=True)
