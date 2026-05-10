@@ -293,11 +293,13 @@ td{padding:7px 10px;border-bottom:1px solid #e5edf5}
 # ─────────────────────────────────────────────────────────────────────────────
 # NOTE: this is a plain string — no Python f-string, so { } are literal JS
 _JS_TEMPLATE = r"""
+/* CDNs: jsDelivr is more reliable than unpkg for UMD bundles.
+   recharts@2.1.12 is the last version confirmed to ship umd/Recharts.js */
 var _cdns = [
-  'https://unpkg.com/react@18.2.0/umd/react.production.min.js',
-  'https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js',
-  'https://unpkg.com/recharts@2.9.0/umd/Recharts.js',
-  'https://unpkg.com/htm@3.1.1/dist/htm.umd.js'
+  'https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js',
+  'https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js',
+  'https://cdn.jsdelivr.net/npm/recharts@2.1.12/umd/Recharts.js',
+  'https://cdn.jsdelivr.net/npm/htm@3.1.1/dist/htm.umd.js'
 ];
 
 function showErr(msg) {
@@ -316,6 +318,12 @@ function loadNext(list, idx, onDone) {
 
 loadNext(_cdns, 0, function() {
   try {
+    /* Defensive: verify all globals loaded (unpkg sometimes 404s silently) */
+    if (typeof React === 'undefined')    { showErr('React CDN failed to load.');    return; }
+    if (typeof ReactDOM === 'undefined') { showErr('ReactDOM CDN failed to load.'); return; }
+    if (typeof Recharts === 'undefined') { showErr('Recharts CDN failed to load. Try refreshing — CDN may be temporarily unavailable.'); return; }
+    if (typeof htm === 'undefined')      { showErr('htm CDN failed to load.');      return; }
+
     var html = htm.bind(React.createElement);
     var useState  = React.useState;
     var useMemo   = React.useMemo;
