@@ -11,13 +11,30 @@ Free, no key required. LRU-cached. 5-second timeout — fails gracefully (return
 Response format from NLM API:
   [total_count, [code_list], {}, [[code, name], ...]]
   data[3] contains the [code, name] pairs.
+
+Local cache (icd10_local_cache.json) contains 2026 ICD-10-CM codes validated as HIPAA-billable
+via MCP. Common codes resolve instantly from cache without an API call.
 """
 
+import json
+import os
 import requests
 from functools import lru_cache
 
 _BASE    = "https://clinicaltables.nlm.nih.gov/api/icd10cm/v3/search"
 _TIMEOUT = 5
+
+# ── Local cache — 2026 ICD-10-CM codes, loaded at module startup ──────────────
+def _load_local_cache() -> dict:
+    try:
+        path = os.path.join(os.path.dirname(__file__), "icd10_local_cache.json")
+        with open(path, "r", encoding="utf-8") as f:
+            return {k.strip().upper(): v for k, v in json.load(f).items()
+                    if not k.startswith("_")}
+    except Exception:
+        return {}
+
+_LOCAL_CACHE: dict[str, str] = _load_local_cache()
 
 # ── Drug class → clinical search term mapping ─────────────────────────────────
 # Used by search_icd10_for_drug to translate RxNorm drug class into a
@@ -115,7 +132,7 @@ def _call_api(terms: str, max_list: int) -> list[list[str]]:
 def lookup_description(code: str) -> str:
     """
     Return the full description for a known ICD-10-CM code.
-    Uses exact-match filter on the NLM search results.
+    Checks local cache first (instant, offline). Falls back to NLM API.
     Returns '' if not found or API unavailable.
     """
     if not code:
@@ -123,6 +140,11 @@ def lookup_description(code: str) -> str:
     code = code.strip().upper()
     if code in ("", "N/A", "NAN", "NONE"):
         return ""
+
+    # Check local cache before making an API call
+    cached = _LOCAL_CACHE.get(code, "")
+    if cached:
+        return cached
 
     pairs = _call_api(code, 20)
     for pair in pairs:

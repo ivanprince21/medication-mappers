@@ -77769,5 +77769,101 @@
     "confidence": "High",
     "manual_review": true,
     "ambiguity_note": "Multiple possible indications (16 ICD-10 codes). Review clinical context to determine primary use."
+  },
+  "isosorbide mononitrate": {
+    "generic_name": "isosorbide mononitrate",
+    "brand_names": ["imdur", "ismo"],
+    "drug_class": "Organic Nitrate / Antianginal",
+    "indications": ["Angina pectoris", "Coronary artery disease", "Heart failure (off-label add-on)"],
+    "why_member_takes": "Used to prevent and relieve chest pain (angina) by relaxing and widening blood vessels. Also used as an add-on therapy in heart failure to reduce cardiac workload.",
+    "related_conditions": ["Angina pectoris", "Coronary artery disease", "Heart failure"],
+    "icd10_codes": ["I20.9", "I25.10", "I50.9"],
+    "confidence": "High",
+    "manual_review": false,
+    "ambiguity_note": ""
+  },
+  "valproic acid": {
+    "generic_name": "valproic acid",
+    "brand_names": ["depakote", "depakene", "stavzor"],
+    "drug_class": "Anticonvulsant / Mood Stabilizer",
+    "indications": ["Bipolar disorder", "Epilepsy", "Migraine prophylaxis"],
+    "why_member_takes": "Used to stabilize mood in bipolar disorder, control seizures in epilepsy, or prevent migraines. The brand name Depakote is commonly associated with both bipolar and epilepsy uses.",
+    "related_conditions": ["Bipolar disorder", "Epilepsy / seizure disorder", "Migraine"],
+    "icd10_codes": ["F31.9", "G40.909", "G43.909"],
+    "confidence": "Medium",
+    "manual_review": true,
+    "ambiguity_note": "Depakote used for both bipolar and epilepsy; verify indication from clinical notes."
+  },
+  "aspirin": {
+    "generic_name": "aspirin",
+    "brand_names": ["bayer", "bufferin", "ecotrin", "st. joseph"],
+    "drug_class": "Salicylate / Antiplatelet / NSAID",
+    "indications": ["Coronary artery disease", "Stroke prevention / TIA", "Antiplatelet therapy"],
+    "why_member_takes": "Used in low doses to prevent heart attacks and strokes by reducing blood clot formation. At higher doses it is used as an anti-inflammatory pain reliever.",
+    "related_conditions": ["Coronary artery disease", "Ischemic stroke / TIA", "Antiplatelet therapy (long-term)"],
+    "icd10_codes": ["I25.10", "I63.9", "Z79.82"],
+    "confidence": "Medium",
+    "manual_review": true,
+    "ambiguity_note": "OTC and Rx; used for cardiac/stroke prevention and as NSAID for pain — verify dose and indication."
+  },
+  "amoxicillin-clavulanate": {
+    "generic_name": "amoxicillin-clavulanate",
+    "brand_names": ["augmentin"],
+    "drug_class": "Beta-lactam / Beta-lactamase Inhibitor Antibiotic",
+    "indications": ["Bacterial infection", "Urinary tract infection", "Acute sinusitis"],
+    "why_member_takes": "A broad-spectrum antibiotic used to treat bacterial infections resistant to amoxicillin alone, including sinus, ear, urinary tract, and skin infections.",
+    "related_conditions": ["Bacterial infection (unspecified)", "Urinary tract infection", "Upper respiratory bacterial infection"],
+    "icd10_codes": ["A49.9", "N39.0", "J06.9"],
+    "confidence": "Medium",
+    "manual_review": true,
+    "ambiguity_note": "Broad-spectrum; verify infection site from clinical notes."
+  },
+  "trimethoprim-sulfamethoxazole": {
+    "generic_name": "trimethoprim-sulfamethoxazole",
+    "brand_names": ["bactrim", "septra", "sulfatrim"],
+    "drug_class": "Sulfonamide / Antibiotic",
+    "indications": ["Urinary tract infection", "Bacterial infection"],
+    "why_member_takes": "A combination antibiotic most commonly used to treat urinary tract infections and certain respiratory or skin bacterial infections.",
+    "related_conditions": ["Urinary tract infection", "Bacterial infection (unspecified)", "Pneumocystis pneumonia (immunocompromised)"],
+    "icd10_codes": ["N39.0", "A49.9", ""],
+    "confidence": "High",
+    "manual_review": false,
+    "ambiguity_note": ""
+  },
+  "vitamin d3": {
+    "generic_name": "vitamin d3",
+    "brand_names": ["d-vi-sol", "nature made", "vitafusion d3"],
+    "drug_class": "Vitamin D Supplement",
+    "indications": ["Vitamin D deficiency", "Hypocalcemia"],
+    "why_member_takes": "Used to treat or prevent vitamin D deficiency, which is important for bone health and calcium absorption. Often used in patients with osteoporosis, limited sun exposure, or malabsorption conditions.",
+    "related_conditions": ["Vitamin D deficiency", "Hypocalcemia", "Osteoporosis (preventive)"],
+    "icd10_codes": ["E55.9", "E83.51", ""],
+    "confidence": "High",
+    "manual_review": false,
+    "ambiguity_note": ""
+  },
+  "cyanocobalamin": {
+    "generic_name": "cyanocobalamin",
+    "brand_names": ["nascobal", "cyanoject", "b-12"],
+    "drug_class": "Vitamin B12 Supplement",
+    "indications": ["Vitamin B12 deficiency anemia", "Vitamin B12 deficiency"],
+    "why_member_takes": "Used to treat vitamin B12 deficiency, which can cause anemia and neurological symptoms. Often needed in patients who cannot absorb B12 from food due to pernicious anemia or gastrointestinal conditions.",
+    "related_conditions": ["Vitamin B12 deficiency anemia", "Vitamin B12 deficiency", "Pernicious anemia"],
+    "icd10_codes": ["D51.0", "E53.8", ""],
+    "confidence": "High",
+    "manual_review": false,
+    "ambiguity_note": ""
+  },
+  "amphetamine salts": {
+    "generic_name": "amphetamine salts",
+    "brand_names": ["adderall", "adderall xr"],
+    "drug_class": "CNS Stimulant / ADHD",
+    "indications": ["Attention-deficit hyperactivity disorder"],
+    "why_member_takes": "A stimulant medication used to improve focus, attention, and impulse control in patients with ADHD. Schedule II controlled substance.",
+    "related_conditions": ["Attention-deficit hyperactivity disorder", "Narcolepsy (off-label)"],
+    "icd10_codes": ["F90.9", "", ""],
+    "confidence": "High",
+    "manual_review": false,
+    "ambiguity_note": ""
   }
 }

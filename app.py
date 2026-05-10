@@ -1,7 +1,7 @@
 """
-Medication Indication Mapper
-============================
-Local Streamlit app. Two input modes:
+Medication Indication Mapper — HealthSmartMSO
+=============================================
+Web app (Streamlit). Two input modes:
   Tab 1 — Structured CSV/Excel with required columns  ← Primary
   Tab 2 — Free-text paste / upload                    ← Quick test
 
@@ -16,6 +16,8 @@ Run: streamlit run app.py
 """
 
 import io
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 
@@ -28,48 +30,349 @@ from parser import (
 from rxnorm_client import check_api_available
 from ndc_client    import check_ndc_api_available
 from icd10_client  import lookup_description as _icd10_ping
+from version       import VERSION, RELEASE_DATE, CHANGELOG
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Medication Indication Mapper",
-    page_icon="💊",
+    page_title="HealthSmartMSO — ICD Extraction",
+    page_icon="🏥",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
+# ── CSS ───────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-    .main-header  { font-size:2rem; font-weight:700; color:#1a3c5e; margin-bottom:0.2rem; }
-    .sub-header   { font-size:1rem; color:#4a6fa5; margin-bottom:1rem; }
-    .disclaimer-box {
-        background:#fff3cd; border-left:5px solid #ffc107;
-        padding:0.75rem 1rem; border-radius:4px;
-        font-size:0.9rem; color:#856404; margin-bottom:1rem;
-    }
-    .api-online  { color:#155724; background:#d4edda; padding:3px 10px; border-radius:4px; font-size:0.82rem; }
-    .api-offline { color:#721c24; background:#f8d7da; padding:3px 10px; border-radius:4px; font-size:0.82rem; }
-    .hcc-flag    { color:#856404; background:#fff3cd; padding:3px 8px; border-radius:4px; font-size:0.82rem; font-weight:600; }
-    .section-label { font-weight:600; color:#1a3c5e; margin-top:1rem; }
-    .req-cols { font-family:monospace; font-size:0.82rem; background:#f0f4f8; padding:0.5rem 1rem; border-radius:4px; }
-    div[data-testid="stDataFrame"] { font-size:0.82rem; }
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+/* ── Global ── */
+html, body, [class*="css"] {
+    font-family: 'Inter', 'Segoe UI', sans-serif !important;
+}
+.block-container { padding-top: 0 !important; max-width: 1400px; }
+
+/* ── Header banner — HealthSmart MSO brand colors ── */
+.app-header {
+    background: linear-gradient(135deg, #002540 0%, #003153 45%, #0a5490 80%, #1370b5 100%);
+    padding: 0;
+    border-radius: 0 0 14px 14px;
+    margin-bottom: 1.2rem;
+    box-shadow: 0 6px 28px rgba(0,0,0,0.28);
+    overflow: hidden;
+}
+.header-top-bar {
+    background: rgba(0,0,0,0.18);
+    padding: 5px 2rem;
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.3px;
+    display: flex;
+    justify-content: space-between;
+}
+.header-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.2rem 2rem 1.3rem 2rem;
+}
+.header-left { display: flex; align-items: center; gap: 1.2rem; flex: 1; }
+.header-logo img {
+    height: 64px;
+    border-radius: 8px;
+    background: white;
+    padding: 4px 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+}
+.header-text { flex: 1; }
+.brand-org {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.65);
+    letter-spacing: 2.5px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+.app-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #ffffff;
+    letter-spacing: -0.3px;
+    line-height: 1.2;
+    margin-bottom: 5px;
+}
+.app-tagline {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+    font-style: italic;
+    font-weight: 400;
+}
+.header-right { text-align: right; flex-shrink: 0; }
+.version-pill {
+    display: inline-block;
+    background: rgba(255,255,255,0.12);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #ffffff;
+    padding: 3px 12px;
+    border-radius: 20px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    margin-bottom: 7px;
+}
+.header-meta-line {
+    color: rgba(255,255,255,0.65);
+    font-size: 0.75rem;
+    line-height: 1.9;
+}
+.header-meta-label {
+    color: rgba(255,255,255,0.4);
+    font-size: 0.7rem;
+}
+
+/* ── Disclaimer ── */
+.disclaimer-box {
+    background: linear-gradient(90deg, #fff8e1, #fffde7);
+    border-left: 5px solid #f9a825;
+    padding: 0.7rem 1.2rem;
+    border-radius: 6px;
+    font-size: 0.86rem;
+    color: #5d4037;
+    margin-bottom: 1rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+}
+
+/* ── About section ── */
+.about-box {
+    background: #f8faff;
+    border: 1px solid #dde8f5;
+    border-radius: 10px;
+    padding: 1.2rem 1.5rem;
+    margin-bottom: 1rem;
+    font-size: 0.87rem;
+    color: #2c3e50;
+    line-height: 1.7;
+}
+.about-box h4 {
+    color: #0d2137;
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+.about-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+.step-num {
+    background: #1a3c5e;
+    color: white;
+    border-radius: 50%;
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+}
+
+/* ── API status badges ── */
+.api-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    margin-right: 6px;
+}
+.api-online  { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
+.api-offline { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
+.api-local   { background: #e3f2fd; color: #003153; border: 1px solid #90caf9; }
+
+/* ── Section headers ── */
+.section-header {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #003153;
+    border-bottom: 2px solid #1370b5;
+    padding-bottom: 4px;
+    margin: 1.2rem 0 0.7rem 0;
+    letter-spacing: 0.2px;
+}
+
+/* ── Required columns display ── */
+.req-cols {
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.78rem;
+    background: #f0f4f8;
+    border: 1px solid #d0dce8;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    color: #1a3c5e;
+}
+
+/* ── Metric cards ── */
+.metric-card {
+    background: white;
+    border: 1px solid #d0dff0;
+    border-top: 3px solid #1370b5;
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.metric-value {
+    font-size: 1.8rem;
+    font-weight: 800;
+    color: #003153;
+    line-height: 1.1;
+}
+.metric-label {
+    font-size: 0.72rem;
+    color: #1370b5;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 2px;
+}
+
+/* ── Run report banner ── */
+.run-report-banner {
+    background: linear-gradient(90deg, #002540, #003153, #0a5490);
+    color: white;
+    padding: 0.7rem 1.4rem;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    margin-bottom: 0.8rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-left: 4px solid #1370b5;
+}
+.run-report-title { font-weight: 700; font-size: 0.92rem; }
+.run-report-meta  { color: rgba(255,255,255,0.6); font-size: 0.78rem; }
+
+/* ── HCC flag ── */
+.hcc-flag {
+    color: #856404;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+/* ── Dataframe ── */
+div[data-testid="stDataFrame"] { font-size: 0.81rem; }
+
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #f0f4f8;
+    border-radius: 8px 8px 0 0;
+    padding: 4px 8px 0 8px;
+    gap: 4px;
+}
+.stTabs [data-baseweb="tab"] {
+    font-weight: 600;
+    font-size: 0.85rem;
+    color: #4a6fa5;
+    border-radius: 6px 6px 0 0;
+    padding: 8px 16px;
+}
+.stTabs [aria-selected="true"] {
+    color: #0d2137 !important;
+    border-bottom: 3px solid #1a3c5e !important;
+}
+
+/* ── Buttons ── */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #003153, #1370b5);
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    box-shadow: 0 2px 8px rgba(19,112,181,0.35);
+    transition: all 0.2s;
+}
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #002540, #0e5f9e);
+    box-shadow: 0 4px 14px rgba(19,112,181,0.45);
+    transform: translateY(-1px);
+}
+
+/* ── Download buttons ── */
+.stDownloadButton > button {
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.84rem;
+}
+
+/* ── Expander ── */
+.streamlit-expanderHeader {
+    font-weight: 600 !important;
+    color: #1a3c5e !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Header ────────────────────────────────────────────────────────────────────
-st.markdown('<div class="main-header">💊 Medication Indication Mapper</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-header">Research / Support Review Tool — Local Use Only</div>', unsafe_allow_html=True)
+# ── Now datetime ──────────────────────────────────────────────────────────────
+_NOW = datetime.now()
+_NOW_STR = _NOW.strftime("%B %d, %Y  %I:%M %p")
 
-st.markdown("""
-<div class="disclaimer-box">
-    ⚠️ <strong>Disclaimer:</strong> This tool provides <strong>possible</strong> medication indications,
-    <strong>possible</strong> related ICD-10-CM codes, and <strong>possible</strong> HCC categories
-    for research/support use only. It does <strong>not</strong> diagnose, confirm a condition,
-    confirm an HCC assignment, or replace clinical judgment.
-    All outputs are possible indications only — not confirmed diagnoses or final billing codes.
+# ── Header banner ─────────────────────────────────────────────────────────────
+st.markdown(f"""
+<div class="app-header">
+  <div class="header-top-bar">
+    <span>HealthSmart Management Services Organization, Inc. &nbsp;·&nbsp; Cypress, CA 90630 &nbsp;·&nbsp; (714) 947-8600 &nbsp;·&nbsp; info@healthsmartmso.com</span>
+    <span>Advance with Integrity &nbsp;·&nbsp; Value the Community &nbsp;·&nbsp; Welcome Opportunities &nbsp;·&nbsp; Strive for Excellence</span>
+  </div>
+  <div class="header-body">
+    <div class="header-left">
+      <div class="header-logo">
+        <img src="https://healthsmartmso.com/wp-content/uploads/2025/10/logo_hsmso.jpg"
+             alt="HealthSmart MSO Logo"
+             onerror="this.style.display='none'">
+      </div>
+      <div class="header-text">
+        <div class="brand-org">HealthSmart Management Services Organization, Inc.</div>
+        <div class="app-title">ICD Extraction from Medication</div>
+        <div class="app-tagline">
+          Medication-to-ICD-10-CM mapping &nbsp;·&nbsp;
+          CMS-HCC v28 risk enrichment &nbsp;·&nbsp;
+          Clinical Support &amp; Research Tool
+        </div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="version-pill">v{VERSION} &nbsp;·&nbsp; {RELEASE_DATE}</div><br>
+      <div class="header-meta-line">
+        <span class="header-meta-label">Session started</span><br>
+        {_NOW_STR}
+      </div>
+    </div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
-# ── API status row ────────────────────────────────────────────────────────────
+# ── Disclaimer ────────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="disclaimer-box">
+  ⚠️ <strong>Disclaimer:</strong>
+  This tool provides <strong>possible</strong> medication indications,
+  <strong>possible</strong> ICD-10-CM codes, and <strong>possible</strong> HCC categories
+  for <strong>research and support review use only</strong>.
+  It does <strong>not</strong> diagnose, confirm a condition, confirm an HCC assignment,
+  or replace clinical judgment.
+  All outputs are possible indications only — not confirmed diagnoses or final billing codes.
+</div>
+""", unsafe_allow_html=True)
+
+# ── API status ────────────────────────────────────────────────────────────────
 @st.cache_data(ttl=60)
 def get_api_status():
     icd10_ok = bool(_icd10_ping("E11.9"))
@@ -77,36 +380,124 @@ def get_api_status():
 
 rxnorm_ok, ndc_ok, icd10_ok = get_api_status()
 
-sc1, sc2, sc3, sc4 = st.columns([2, 2, 2, 3])
-with sc1:
-    icon = "🟢" if rxnorm_ok else "🔴"
-    cls  = "api-online" if rxnorm_ok else "api-offline"
-    txt  = "Online" if rxnorm_ok else "Offline"
-    st.markdown(f'{icon} <span class="{cls}">RxNorm API: {txt}</span>', unsafe_allow_html=True)
-with sc2:
-    icon = "🟢" if ndc_ok else "🔴"
-    cls  = "api-online" if ndc_ok else "api-offline"
-    txt  = "Online" if ndc_ok else "Offline"
-    st.markdown(f'{icon} <span class="{cls}">openFDA NDC API: {txt}</span>', unsafe_allow_html=True)
-with sc3:
-    icon = "🟢" if icd10_ok else "🔴"
-    cls  = "api-online" if icd10_ok else "api-offline"
-    txt  = "Online" if icd10_ok else "Offline"
-    st.markdown(f'{icon} <span class="{cls}">ICD-10 NLM API: {txt}</span>', unsafe_allow_html=True)
-with sc4:
-    st.markdown('<span class="hcc-flag">🏷 HCC: CMS-HCC v28 crosswalk (local — offline capable)</span>',
-                unsafe_allow_html=True)
+def _badge(label, ok, local=False):
+    if local:
+        return f'<span class="api-badge api-local">🔵 {label}</span>'
+    cls = "api-online" if ok else "api-offline"
+    dot = "🟢" if ok else "🔴"
+    txt = "Online" if ok else "Offline"
+    return f'<span class="api-badge {cls}">{dot} {label}: {txt}</span>'
 
-st.markdown("")
+st.markdown(
+    _badge("RxNorm API", rxnorm_ok) +
+    _badge("openFDA NDC API", ndc_ok) +
+    _badge("ICD-10 NLM API", icd10_ok) +
+    _badge("HCC v28 Crosswalk — Offline Capable", True, local=True),
+    unsafe_allow_html=True,
+)
+st.markdown("<div style='margin-bottom:0.8rem'></div>", unsafe_allow_html=True)
+
+# ── About / Instructions ──────────────────────────────────────────────────────
+with st.expander("📋  About This Project — Purpose, Instructions & Data Flow", expanded=False):
+    st.markdown("""
+<div class="about-box">
+
+<h4>🎯 Purpose</h4>
+<p>
+The <strong>HealthSmartMSO ICD Extraction from Medication</strong> project automates the process of mapping
+member medication lists to <strong>possible ICD-10-CM diagnosis codes</strong> and
+<strong>CMS-HCC Model v28 risk categories</strong>.
+It is designed to support clinical reviewers and coding teams in identifying potential diagnoses
+that may need to be validated or documented — reducing manual lookup time and surfacing
+high-value HCC opportunities for review.
+</p>
+
+<h4>👥 Who It's For</h4>
+<ul>
+  <li><strong>Clinical support staff</strong> reviewing member medication profiles</li>
+  <li><strong>HCC coding teams</strong> identifying potential risk-adjustment opportunities</li>
+  <li><strong>Care management teams</strong> validating medication-diagnosis alignment</li>
+</ul>
+
+<h4>📌 How to Use</h4>
+<div class="about-step"><span class="step-num">1</span><span>
+  <strong>Prepare your file.</strong> Export a structured medication list from your EHR or pharmacy system.
+  The file must be CSV or Excel format with the 8 required columns listed in the upload tab.
+  Each row represents one medication for one member.
+</span></div>
+<div class="about-step"><span class="step-num">2</span><span>
+  <strong>Upload and validate.</strong> Use the <em>Structured File Upload</em> tab to upload your file.
+  The tool validates required columns and previews your data before processing.
+</span></div>
+<div class="about-step"><span class="step-num">3</span><span>
+  <strong>Process.</strong> Click <em>Parse / Process</em>. The tool routes each medication through
+  the appropriate lookup engine (RxNorm API, openFDA NDC API, or local dictionary),
+  resolves ICD-10-CM codes, looks up descriptions from the NLM API, and enriches with HCC categories.
+</span></div>
+<div class="about-step"><span class="step-num">4</span><span>
+  <strong>Review results.</strong> Use the filter controls to focus on Manual Review rows,
+  High Value HCC flags, or specific drugs. The High Value HCC callout section highlights
+  medications with potential HCC-mapped diagnoses.
+</span></div>
+<div class="about-step"><span class="step-num">5</span><span>
+  <strong>Export.</strong> Download the full results as Excel (.xlsx) for further review,
+  annotation, or submission to the clinical team.
+</span></div>
+
+<h4>🔄 Lookup & Data Flow</h4>
+<table style="width:100%; font-size:0.83rem; border-collapse:collapse;">
+  <tr style="background:#e8f0fb; font-weight:600;">
+    <td style="padding:6px 10px; border:1px solid #c8d8ed">Code System</td>
+    <td style="padding:6px 10px; border:1px solid #c8d8ed">Lookup Engine</td>
+    <td style="padding:6px 10px; border:1px solid #c8d8ed">What It Returns</td>
+  </tr>
+  <tr>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">RxNorm / RXN</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">NLM RxNorm API + Local Dictionary</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Generic name, drug class, indications, ICD-10 codes, HCC</td>
+  </tr>
+  <tr style="background:#f8faff;">
+    <td style="padding:6px 10px; border:1px solid #dde8f5">NDC</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">openFDA NDC API + Local Dictionary</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Generic name, brand, dosage form, ICD-10 codes, HCC</td>
+  </tr>
+  <tr>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Other / Display Name</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Local Dictionary (text match)</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Full mapping if drug is in dictionary; manual review flag if not</td>
+  </tr>
+  <tr style="background:#f8faff;">
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Not found anywhere</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">NLM ICD-10-CM live search (by drug class)</td>
+    <td style="padding:6px 10px; border:1px solid #dde8f5">Possible ICD codes from live search — low confidence, manual review required</td>
+  </tr>
+</table>
+
+<h4 style="margin-top:1rem">⚠️ Important Limitations</h4>
+<ul>
+  <li>All ICD-10-CM codes returned are <strong>possible</strong> — they must be validated by a qualified clinician or coder.</li>
+  <li>HCC assignments are based on the local CMS-HCC Model v28 crosswalk for <strong>research purposes only</strong>.</li>
+  <li>This tool does <strong>not</strong> access member clinical records — it maps medications to possible diagnoses based on known pharmacological indications.</li>
+  <li>Drugs not in the local dictionary receive a <strong>Low confidence / Manual Review</strong> flag automatically.</li>
+</ul>
+
+</div>
+""", unsafe_allow_html=True)
+
+# ── Changelog ─────────────────────────────────────────────────────────────────
+with st.expander(f"📝  Version History — Current: v{VERSION}", expanded=False):
+    st.markdown(CHANGELOG)
+
+st.markdown("---")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # INPUT TABS
 # ═════════════════════════════════════════════════════════════════════════════
-st.markdown('<div class="section-label">Step 1 — Input Medication Data</div>', unsafe_allow_html=True)
+st.markdown('<div class="section-header">Input Medication Data</div>', unsafe_allow_html=True)
 
 tab_struct, tab_text = st.tabs([
-    "📋 Structured File Upload (CSV / Excel)  ← Primary",
-    "✏️  Free Text / Paste  ← Quick Test",
+    "📋  Structured File Upload (CSV / Excel)  ← Primary",
+    "✏️   Free Text / Paste  ← Quick Test",
 ])
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -117,7 +508,7 @@ with tab_struct:
     st.markdown("**Required columns** (exact names, case-insensitive):")
     st.markdown(
         '<div class="req-cols">' + " &nbsp;|&nbsp; ".join(REQUIRED_INPUT_COLS) + "</div>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
     with st.expander("📌 How lookup routing works"):
@@ -129,7 +520,7 @@ with tab_struct:
 | Anything else | **Local dictionary** — text match on `MedicationsCodeDisplayName` |
 
 After ICD codes are resolved from the local dictionary, each code is:
-1. Looked up in the **NLM ICD-10-CM API** for a full description (requires internet)
+1. Looked up in the **NLM ICD-10-CM API** (or local cache) for a full description
 2. Looked up in the **CMS-HCC Model v28 crosswalk** (bundled locally — works offline)
 
 For drugs not in the local dictionary (API-only), a **live ICD-10 search** is attempted using the drug class.
@@ -148,7 +539,7 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
             ext = struct_file.name.rsplit(".", 1)[-1].lower()
             df_input = pd.read_csv(struct_file, dtype=str) if ext == "csv" else pd.read_excel(struct_file, dtype=str)
 
-            st.success(f"Loaded: **{struct_file.name}** — {len(df_input):,} rows, {len(df_input.columns)} columns")
+            st.success(f"✔  **{struct_file.name}** — {len(df_input):,} rows, {len(df_input.columns)} columns")
 
             input_cols_lower = {c.lower().strip() for c in df_input.columns}
             missing_cols     = [c for c in REQUIRED_INPUT_COLS if c.lower().strip() not in input_cols_lower]
@@ -158,9 +549,9 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
                 st.error(f"Missing required columns: **{missing_cols}**")
                 st.stop()
             else:
-                st.success("All required columns found.")
+                st.success("✔  All required columns found.")
             if extra_cols:
-                st.info(f"Extra columns (ignored): {extra_cols}")
+                st.info(f"Extra columns (will be ignored): {extra_cols}")
 
             with st.expander("Preview first 10 rows"):
                 st.dataframe(df_input.head(10), use_container_width=True, hide_index=True)
@@ -169,9 +560,9 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
             st.error(f"Could not read file: {e}")
             df_input = None
 
-    st.markdown('<div class="section-label">Step 2 — Process</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Process</div>', unsafe_allow_html=True)
     run_struct = st.button(
-        "🔍 Parse / Process Structured File",
+        "🔍  Parse / Process Structured File",
         type="primary",
         key="run_struct",
         disabled=(df_input is None),
@@ -179,11 +570,14 @@ For drugs not in the local dictionary (API-only), a **live ICD-10 search** is at
 
     if run_struct and df_input is not None:
         try:
-            with st.spinner(f"Processing {len(df_input):,} rows — RxNorm/NDC rows query external APIs..."):
+            with st.spinner(f"Processing {len(df_input):,} rows — RxNorm/NDC rows query external APIs…"):
                 result_df = parse_structured_dataframe(df_input)
-            st.session_state["results_df"]   = result_df
-            st.session_state["results_mode"] = "structured"
-            st.success(f"Done — {len(result_df):,} rows processed.")
+            st.session_state["results_df"]      = result_df
+            st.session_state["results_mode"]    = "structured"
+            st.session_state["run_datetime"]    = datetime.now()
+            st.session_state["run_file_name"]   = struct_file.name if struct_file else ""
+            st.session_state["run_row_count"]   = len(result_df)
+            st.success(f"✔  Done — {len(result_df):,} rows processed.")
         except ValueError as e:
             st.error(str(e))
         except Exception as e:
@@ -206,7 +600,7 @@ UnknownDrugXYZ 100 mg
 """
 
 with tab_text:
-    with st.expander("ℹ️ Supported free-text formats"):
+    with st.expander("ℹ️  Supported free-text formats"):
         st.markdown("""
 ```
 Metformin 500 mg              ← drug name + dose (local dict)
@@ -223,7 +617,7 @@ HCC enrichment runs on all resolved ICD codes automatically.
     if ft_file:
         try:
             raw_text = ft_file.read().decode("utf-8", errors="replace")
-            st.success(f"Loaded: {ft_file.name} ({len(raw_text.splitlines())} lines)")
+            st.success(f"✔  Loaded: {ft_file.name} ({len(raw_text.splitlines())} lines)")
         except Exception as e:
             st.error(f"Could not read file: {e}")
 
@@ -237,26 +631,29 @@ HCC enrichment runs on all resolved ICD codes automatically.
             value=st.session_state.get("ft_paste", ""),
             height=200,
             key="ft_paste_area",
-            placeholder="Metformin 500 mg\nRXCUI:860975\n...",
+            placeholder="Metformin 500 mg\nRXCUI:860975\n…",
         )
     if pasted.strip():
         raw_text = pasted
 
-    st.markdown('<div class="section-label">Step 2 — Process</div>', unsafe_allow_html=True)
-    run_free = st.button("🔍 Parse / Process Free Text", type="primary", key="run_free")
+    st.markdown('<div class="section-header">Process</div>', unsafe_allow_html=True)
+    run_free = st.button("🔍  Parse / Process Free Text", type="primary", key="run_free")
 
     if run_free:
         if not raw_text or not raw_text.strip():
             st.error("No input provided.")
         else:
-            with st.spinner("Parsing..."):
+            with st.spinner("Parsing…"):
                 try:
                     results = parse_medication_list(raw_text)
                     if not results:
                         st.warning("No medication lines found.")
                     else:
-                        st.session_state["results_df"]   = pd.DataFrame(results)
-                        st.session_state["results_mode"] = "freetext"
+                        st.session_state["results_df"]    = pd.DataFrame(results)
+                        st.session_state["results_mode"]  = "freetext"
+                        st.session_state["run_datetime"]  = datetime.now()
+                        st.session_state["run_file_name"] = "Free-text input"
+                        st.session_state["run_row_count"] = len(results)
                 except Exception as e:
                     st.error(f"Parsing error: {e}")
 
@@ -267,9 +664,29 @@ HCC enrichment runs on all resolved ICD codes automatically.
 if "results_df" in st.session_state:
     df: pd.DataFrame = st.session_state["results_df"]
     mode: str        = st.session_state.get("results_mode", "freetext")
+    run_dt           = st.session_state.get("run_datetime")
+    run_file         = st.session_state.get("run_file_name", "")
+    run_rows         = st.session_state.get("run_row_count", len(df))
 
     st.markdown("---")
-    st.markdown('<div class="section-label">Results</div>', unsafe_allow_html=True)
+
+    # ── Run report banner ─────────────────────────────────────────────────────
+    run_dt_str = run_dt.strftime("%B %d, %Y  %I:%M:%S %p") if run_dt else "—"
+    st.markdown(f"""
+<div class="run-report-banner">
+  <div>
+    <div class="run-report-title">📊 Report Results</div>
+    <div class="run-report-meta">
+      Source: <strong>{run_file}</strong> &nbsp;·&nbsp;
+      {run_rows:,} rows processed
+    </div>
+  </div>
+  <div style="text-align:right">
+    <div class="run-report-meta">Report generated</div>
+    <div style="color:#ffffff; font-weight:600; font-size:0.85rem">{run_dt_str}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
     # ── Summary metrics ───────────────────────────────────────────────────────
     total        = len(df)
@@ -281,19 +698,28 @@ if "results_df" in st.session_state:
     api_rows     = int(df["Data Source"].str.contains("API", na=False).sum()) if "Data Source" in df.columns else 0
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
-    c1.metric("Total Rows",         total)
-    c2.metric("Recognized",         recognized)
-    c3.metric("Unknown",            unknown)
-    c4.metric("Manual Review",      need_review)
-    c5.metric("High Value HCC",     high_hcc)
-    c6.metric("Via External API",   api_rows)
+    for col, val, label in [
+        (c1, total,      "Total Rows"),
+        (c2, recognized, "Recognized"),
+        (c3, unknown,    "Unknown"),
+        (c4, need_review,"Manual Review"),
+        (c5, high_hcc,   "High Value HCC"),
+        (c6, api_rows,   "Via External API"),
+    ]:
+        col.markdown(f"""
+<div class="metric-card">
+  <div class="metric-value">{val:,}</div>
+  <div class="metric-label">{label}</div>
+</div>""", unsafe_allow_html=True)
+
+    st.markdown("<div style='margin-bottom:0.5rem'></div>", unsafe_allow_html=True)
 
     # ── Filters ───────────────────────────────────────────────────────────────
-    st.markdown('<div class="section-label">Filter Results</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Filter Results</div>', unsafe_allow_html=True)
     fc1, fc2, fc3, fc4, fc5 = st.columns(5)
 
     with fc1:
-        search = st.text_input("Search:", placeholder="drug, ICD, HCC, condition...")
+        search = st.text_input("Search:", placeholder="drug, ICD, HCC, condition…")
     with fc2:
         f_review = st.selectbox("Manual Review:", ["All", "YES", "No"])
     with fc3:
@@ -317,7 +743,7 @@ if "results_df" in st.session_state:
     if f_src != "All" and "Data Source" in display_df.columns:
         display_df = display_df[display_df["Data Source"] == f_src]
 
-    st.caption(f"Showing {len(display_df):,} of {total:,} rows")
+    st.caption(f"Showing **{len(display_df):,}** of **{total:,}** rows")
 
     col_cfg = {
         "Manual Review Flag":           st.column_config.TextColumn(width="small"),
@@ -355,8 +781,8 @@ if "results_df" in st.session_state:
                 "Possible ICD-10-CM Code 3", "HCC Category (ICD 3)", "HCC Description (ICD 3)",
                 "Possible ICD-10-CM Code 4", "HCC Category (ICD 4)", "HCC Description (ICD 4)",
             ] if c in hcc_df.columns]
-            with st.expander(f"🏷 High Value HCC Detected — {len(hcc_df):,} medication(s)", expanded=True):
-                st.caption("These medications have potential ICD codes that map to high-value HCC categories in CMS-HCC Model v28. Manual clinical review recommended.")
+            with st.expander(f"🏷  High Value HCC Detected — {len(hcc_df):,} medication(s)", expanded=True):
+                st.caption("These medications have potential ICD codes mapping to high-value HCC categories in CMS-HCC Model v28. Manual clinical review recommended.")
                 st.dataframe(hcc_df[hcc_show], use_container_width=True, hide_index=True)
 
     # ── Manual review callout ─────────────────────────────────────────────────
@@ -368,13 +794,69 @@ if "results_df" in st.session_state:
             "Normalized Generic Name", "Confidence Level",
             "High Value HCC Flag", "Data Source", "Ambiguity Notes",
         ] if c in review_df.columns]
-        with st.expander(f"⚠️ Manual Review Required — {len(review_df):,} row(s)", expanded=False):
+        with st.expander(f"⚠️  Manual Review Required — {len(review_df):,} row(s)", expanded=False):
             st.dataframe(review_df[review_show], use_container_width=True, hide_index=True)
 
     # ── Exports ───────────────────────────────────────────────────────────────
     st.markdown("---")
-    st.markdown('<div class="section-label">Step 3 — Export Results</div>', unsafe_allow_html=True)
-    st.caption("Exports use the full unfiltered results table.")
+    st.markdown('<div class="section-header">Export Results</div>', unsafe_allow_html=True)
+    st.caption(
+        "Exports use a **condensed format** — all ICD codes, indications, and HCC fields combined "
+        "into single columns for readability. Full unfiltered results."
+    )
+
+    def _condense_for_export(raw: pd.DataFrame) -> pd.DataFrame:
+        """Flatten multi-slot ICD / indication / HCC columns into single pipe-joined columns."""
+        def _get(col):
+            return raw.get(col, pd.Series([""] * len(raw), index=raw.index)).fillna("").astype(str)
+
+        _SKIP = {"", "nan", "n/a", "n/a — not in local dictionary", "none"}
+
+        def _join(*cols):
+            parts = pd.concat([_get(c).rename(c) for c in cols], axis=1)
+            return parts.apply(
+                lambda r: " | ".join(v.strip() for v in r if v.strip().lower() not in _SKIP),
+                axis=1,
+            )
+
+        def _trunc(col, n):
+            return _get(col).apply(lambda x: (x[:n] + "…") if len(x) > n else x)
+
+        out = pd.DataFrame(index=raw.index)
+
+        if "Row Number"    in raw.columns: out["Row Number"]    = _get("Row Number")
+        if "Original Input" in raw.columns: out["Original Input"] = _get("Original Input")
+
+        out["MedicationID"]               = _get("MedicationsID")
+        out["DocID"]                      = _get("DocID")
+        out["DateOfService"]              = _get("DateOfService")
+        out["Generic Name"]               = _get("Normalized Generic Name")
+        out["Brand Name Match"]           = _get("Brand Name Match")
+        out["Dosage"]                     = _get("Dosage")
+        out["Possible Indications"]       = _join(
+            "Possible Indication 1", "Possible Indication 2", "Possible Indication 3"
+        )
+        out["Why Member Takes This Drug"] = _get("Why Member May Take This Drug")
+        out["Possible ICD-10-CM Codes"]   = _join(
+            "Possible ICD-10-CM Code 1", "Possible ICD-10-CM Code 2",
+            "Possible ICD-10-CM Code 3", "Possible ICD-10-CM Code 4",
+        )
+        out["HCC Category"]               = _join(
+            "HCC Category (ICD 1)", "HCC Category (ICD 2)",
+            "HCC Category (ICD 3)", "HCC Category (ICD 4)",
+        )
+        out["HCC Model Hierarchy"]        = _join(
+            "HCC Model Hierarchy (ICD 1)", "HCC Model Hierarchy (ICD 2)",
+            "HCC Model Hierarchy (ICD 3)", "HCC Model Hierarchy (ICD 4)",
+        )
+        out["High Value HCC Flag"]        = _get("High Value HCC Flag")
+        out["Confidence Level"]           = _get("Confidence Level")
+        out["Manual Review Flag"]         = _get("Manual Review Flag")
+        out["Ambiguity Notes"]            = _trunc("Ambiguity Notes", 150)
+        out["Data Source"]                = _trunc("Data Source", 80)
+        return out
+
+    export_df = _condense_for_export(df)
 
     ex1, ex2 = st.columns(2)
 
@@ -382,7 +864,7 @@ if "results_df" in st.session_state:
         try:
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-                df.to_excel(writer, sheet_name="Results", index=False)
+                export_df.to_excel(writer, sheet_name="Results", index=False)
                 ws = writer.sheets["Results"]
                 ws.freeze_panes = "A2"
                 for col_cells in ws.columns:
@@ -390,10 +872,10 @@ if "results_df" in st.session_state:
                         (len(str(c.value)) if c.value is not None else 0)
                         for c in col_cells
                     )
-                    ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 55)
+                    ws.column_dimensions[col_cells[0].column_letter].width = min(max_len + 4, 60)
             buf.seek(0)
             st.download_button(
-                "📥 Download Excel (.xlsx)", data=buf,
+                "📥  Download Excel (.xlsx)", data=buf,
                 file_name="medication_indication_results.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
@@ -404,9 +886,9 @@ if "results_df" in st.session_state:
     with ex2:
         try:
             txt_buf = io.StringIO()
-            df.to_csv(txt_buf, sep="\t", index=False)
+            export_df.to_csv(txt_buf, sep="\t", index=False)
             st.download_button(
-                "📥 Download Text (.txt, tab-delimited)", data=txt_buf.getvalue().encode("utf-8"),
+                "📥  Download Text (.txt, tab-delimited)", data=txt_buf.getvalue().encode("utf-8"),
                 file_name="medication_indication_results.txt",
                 mime="text/plain",
                 use_container_width=True,
@@ -416,8 +898,19 @@ if "results_df" in st.session_state:
 
 # ── Footer ────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.caption(
-    "Medication Indication Mapper · Research/Support Tool · Not for clinical diagnosis or billing · "
-    "ICD-10 from local dictionary · ICD-10 descriptions: NLM API · HCC: CMS-HCC v28 crosswalk (research use only) · "
-    "RxNorm: NLM API · NDC: openFDA API"
-)
+st.markdown(f"""
+<div style="display:flex; justify-content:space-between; align-items:center;
+     font-size:0.74rem; color:#888; padding: 0.3rem 0 1rem 0; border-top: 1px solid #e0e8f0; margin-top: 0.5rem;">
+  <div>
+    <strong style="color:#003153">HealthSmart Management Services Organization, Inc.</strong>
+    &nbsp;·&nbsp; ICD Extraction from Medication &nbsp;·&nbsp;
+    v{VERSION} ({RELEASE_DATE}) &nbsp;·&nbsp;
+    <em>Research / Support Tool — Not for clinical diagnosis or billing</em>
+  </div>
+  <div style="text-align:right; color:#aaa;">
+    ICD-10: NLM API + 2026 local cache &nbsp;·&nbsp;
+    HCC: CMS-HCC v28 (research) &nbsp;·&nbsp;
+    RxNorm: NLM &nbsp;·&nbsp; NDC: openFDA
+  </div>
+</div>
+""", unsafe_allow_html=True)
