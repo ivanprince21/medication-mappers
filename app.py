@@ -16,7 +16,7 @@ Run: streamlit run app.py
 """
 
 import io
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 import pandas as pd
 import streamlit as st
@@ -369,8 +369,9 @@ div[data-baseweb="input"] > div {
 """, unsafe_allow_html=True)
 
 # ── Now datetime ──────────────────────────────────────────────────────────────
-_NOW = datetime.now()
-_NOW_STR = _NOW.strftime("%B %d, %Y  %I:%M %p")
+_PST = timezone(timedelta(hours=-8))
+_NOW = datetime.now(tz=_PST)
+_NOW_STR = _NOW.strftime("%B %d, %Y  %I:%M %p PST")
 
 # ── Header banner ─────────────────────────────────────────────────────────────
 st.markdown(f"""
