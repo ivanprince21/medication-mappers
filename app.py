@@ -31,6 +31,7 @@ from rxnorm_client import check_api_available
 from ndc_client    import check_ndc_api_available
 from icd10_client  import lookup_description as _icd10_ping
 from version       import VERSION, RELEASE_DATE, CHANGELOG
+from analytics     import render_analytics_dashboard
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -48,23 +49,24 @@ st.markdown("""
 /* ── Global ── */
 html, body, [class*="css"] {
     font-family: 'Inter', 'Segoe UI', sans-serif !important;
+    background-color: #f3fbff;
 }
 .block-container { padding-top: 0 !important; max-width: 1400px; }
 
-/* ── Header banner — HealthSmart MSO brand colors ── */
+/* ── Header banner — HealthSmart MSO dark gradient style ── */
 .app-header {
-    background: linear-gradient(135deg, #002540 0%, #003153 45%, #0a5490 80%, #1370b5 100%);
+    background: linear-gradient(135deg, #110c1d 0%, #1a1230 40%, #003153 75%, #1863dc 100%);
     padding: 0;
-    border-radius: 0 0 14px 14px;
-    margin-bottom: 1.2rem;
-    box-shadow: 0 6px 28px rgba(0,0,0,0.28);
+    border-radius: 0 0 16px 16px;
+    margin-bottom: 1.4rem;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.38);
     overflow: hidden;
 }
 .header-top-bar {
-    background: rgba(0,0,0,0.18);
+    background: rgba(0,0,0,0.22);
     padding: 5px 2rem;
-    font-size: 0.7rem;
-    color: rgba(255,255,255,0.6);
+    font-size: 0.69rem;
+    color: rgba(255,255,255,0.55);
     letter-spacing: 0.3px;
     display: flex;
     justify-content: space-between;
@@ -73,86 +75,88 @@ html, body, [class*="css"] {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 1.2rem 2rem 1.3rem 2rem;
+    padding: 1.3rem 2rem 1.5rem 2rem;
 }
-.header-left { display: flex; align-items: center; gap: 1.2rem; flex: 1; }
+.header-left { display: flex; align-items: center; gap: 1.4rem; flex: 1; }
 .header-logo img {
-    height: 64px;
-    border-radius: 8px;
+    height: 68px;
+    border-radius: 10px;
     background: white;
-    padding: 4px 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    padding: 5px 10px;
+    box-shadow: 6px 6px 9px rgba(0,0,0,0.28);
 }
 .header-text { flex: 1; }
 .brand-org {
-    font-size: 0.68rem;
+    font-size: 0.67rem;
     font-weight: 700;
-    color: rgba(255,255,255,0.65);
-    letter-spacing: 2.5px;
+    color: #29b6f6;
+    letter-spacing: 2.8px;
     text-transform: uppercase;
-    margin-bottom: 3px;
+    margin-bottom: 4px;
 }
 .app-title {
-    font-size: 1.55rem;
+    font-size: 1.6rem;
     font-weight: 800;
     color: #ffffff;
-    letter-spacing: -0.3px;
+    letter-spacing: -0.4px;
     line-height: 1.2;
-    margin-bottom: 5px;
+    margin-bottom: 6px;
 }
 .app-tagline {
-    font-size: 0.75rem;
-    color: rgba(255,255,255,0.6);
+    font-size: 0.74rem;
+    color: rgba(255,255,255,0.55);
     font-style: italic;
     font-weight: 400;
 }
 .header-right { text-align: right; flex-shrink: 0; }
 .version-pill {
     display: inline-block;
-    background: rgba(255,255,255,0.12);
-    border: 1px solid rgba(255,255,255,0.25);
-    color: #ffffff;
-    padding: 3px 12px;
-    border-radius: 20px;
+    background: rgba(41,182,246,0.15);
+    border: 1px solid rgba(41,182,246,0.4);
+    color: #29b6f6;
+    padding: 3px 14px;
+    border-radius: 9999px;
     font-size: 0.74rem;
     font-weight: 600;
     margin-bottom: 7px;
+    letter-spacing: 0.3px;
 }
 .header-meta-line {
-    color: rgba(255,255,255,0.65);
-    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+    font-size: 0.74rem;
     line-height: 1.9;
 }
 .header-meta-label {
-    color: rgba(255,255,255,0.4);
-    font-size: 0.7rem;
+    color: rgba(255,255,255,0.38);
+    font-size: 0.68rem;
 }
 
 /* ── Disclaimer ── */
 .disclaimer-box {
     background: linear-gradient(90deg, #fff8e1, #fffde7);
-    border-left: 5px solid #f9a825;
-    padding: 0.7rem 1.2rem;
-    border-radius: 6px;
-    font-size: 0.86rem;
+    border-left: 5px solid #f0a500;
+    padding: 0.75rem 1.2rem;
+    border-radius: 8px;
+    font-size: 0.85rem;
     color: #5d4037;
     margin-bottom: 1rem;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    box-shadow: 6px 6px 9px rgba(0,0,0,0.07);
 }
 
 /* ── About section ── */
 .about-box {
-    background: #f8faff;
-    border: 1px solid #dde8f5;
+    background: #ffffff;
+    border: 1px solid #d0e8f5;
     border-radius: 10px;
     padding: 1.2rem 1.5rem;
     margin-bottom: 1rem;
     font-size: 0.87rem;
-    color: #2c3e50;
+    color: #212121;
     line-height: 1.7;
+    box-shadow: 6px 6px 9px rgba(0,0,0,0.07);
 }
 .about-box h4 {
-    color: #0d2137;
+    color: #003153;
     font-size: 1rem;
     font-weight: 700;
     margin-bottom: 0.5rem;
@@ -164,11 +168,11 @@ html, body, [class*="css"] {
     margin-bottom: 6px;
 }
 .step-num {
-    background: #1a3c5e;
+    background: linear-gradient(135deg, #003153, #1863dc);
     color: white;
     border-radius: 50%;
-    width: 22px;
-    height: 22px;
+    width: 23px;
+    height: 23px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -176,6 +180,7 @@ html, body, [class*="css"] {
     font-weight: 700;
     flex-shrink: 0;
     margin-top: 2px;
+    box-shadow: 0 2px 6px rgba(24,99,220,0.35);
 }
 
 /* ── API status badges ── */
@@ -183,11 +188,13 @@ html, body, [class*="css"] {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    padding: 4px 12px;
-    border-radius: 20px;
-    font-size: 0.78rem;
+    padding: 5px 14px;
+    border-radius: 9999px;
+    font-size: 0.77rem;
     font-weight: 600;
     margin-right: 6px;
+    margin-bottom: 4px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 .api-online  { background: #e8f5e9; color: #1b5e20; border: 1px solid #a5d6a7; }
 .api-offline { background: #ffebee; color: #b71c1c; border: 1px solid #ef9a9a; }
@@ -195,12 +202,12 @@ html, body, [class*="css"] {
 
 /* ── Section headers ── */
 .section-header {
-    font-size: 0.95rem;
+    font-size: 0.94rem;
     font-weight: 700;
     color: #003153;
-    border-bottom: 2px solid #1370b5;
-    padding-bottom: 4px;
-    margin: 1.2rem 0 0.7rem 0;
+    border-bottom: 2px solid #29b6f6;
+    padding-bottom: 5px;
+    margin: 1.3rem 0 0.8rem 0;
     letter-spacing: 0.2px;
 }
 
@@ -208,61 +215,67 @@ html, body, [class*="css"] {
 .req-cols {
     font-family: 'Consolas', 'Courier New', monospace;
     font-size: 0.78rem;
-    background: #f0f4f8;
-    border: 1px solid #d0dce8;
+    background: #f3fbff;
+    border: 1px solid #b8ddf5;
     padding: 0.5rem 1rem;
     border-radius: 6px;
-    color: #1a3c5e;
+    color: #003153;
 }
 
 /* ── Metric cards ── */
 .metric-card {
-    background: white;
-    border: 1px solid #d0dff0;
-    border-top: 3px solid #1370b5;
+    background: #ffffff;
+    border: 1px solid #d0e8f5;
+    border-top: 3px solid #29b6f6;
     border-radius: 10px;
-    padding: 0.8rem 1rem;
+    padding: 0.9rem 1rem;
     text-align: center;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    box-shadow: 6px 6px 9px rgba(0,0,0,0.09);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.metric-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 8px 10px 14px rgba(0,0,0,0.13);
 }
 .metric-value {
-    font-size: 1.8rem;
+    font-size: 1.9rem;
     font-weight: 800;
     color: #003153;
     line-height: 1.1;
 }
 .metric-label {
-    font-size: 0.72rem;
-    color: #1370b5;
+    font-size: 0.71rem;
+    color: #1863dc;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-top: 2px;
+    letter-spacing: 0.6px;
+    margin-top: 3px;
 }
 
 /* ── Run report banner ── */
 .run-report-banner {
-    background: linear-gradient(90deg, #002540, #003153, #0a5490);
+    background: linear-gradient(135deg, #110c1d 0%, #1a1230 40%, #003153 80%, #1863dc 100%);
     color: white;
-    padding: 0.7rem 1.4rem;
-    border-radius: 8px;
+    padding: 0.85rem 1.5rem;
+    border-radius: 10px;
     font-size: 0.82rem;
-    margin-bottom: 0.8rem;
+    margin-bottom: 1rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    border-left: 4px solid #1370b5;
+    border-left: 4px solid #29b6f6;
+    box-shadow: 6px 6px 9px rgba(0,0,0,0.2);
 }
-.run-report-title { font-weight: 700; font-size: 0.92rem; }
+.run-report-title { font-weight: 700; font-size: 0.93rem; color: #ffffff; }
 .run-report-meta  { color: rgba(255,255,255,0.6); font-size: 0.78rem; }
 
 /* ── HCC flag ── */
 .hcc-flag {
     color: #856404;
     background: #fff3cd;
-    border: 1px solid #ffc107;
-    padding: 4px 12px;
-    border-radius: 20px;
+    border: 1px solid #f0a500;
+    padding: 4px 14px;
+    border-radius: 9999px;
     font-size: 0.78rem;
     font-weight: 600;
 }
@@ -272,50 +285,77 @@ div[data-testid="stDataFrame"] { font-size: 0.81rem; }
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
-    background: #f0f4f8;
-    border-radius: 8px 8px 0 0;
-    padding: 4px 8px 0 8px;
+    background: #ebf9ff;
+    border-radius: 9999px;
+    padding: 4px 8px;
     gap: 4px;
+    border: 1px solid #b8ddf5;
 }
 .stTabs [data-baseweb="tab"] {
     font-weight: 600;
     font-size: 0.85rem;
-    color: #4a6fa5;
-    border-radius: 6px 6px 0 0;
-    padding: 8px 16px;
+    color: #003153;
+    border-radius: 9999px;
+    padding: 7px 18px;
+    transition: all 0.2s ease;
 }
 .stTabs [aria-selected="true"] {
-    color: #0d2137 !important;
-    border-bottom: 3px solid #1a3c5e !important;
+    background: linear-gradient(135deg, #003153, #1863dc) !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 8px rgba(24,99,220,0.35);
 }
 
 /* ── Buttons ── */
 .stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, #003153, #1370b5);
+    background: linear-gradient(135deg, #003153, #1863dc);
     border: none;
-    border-radius: 8px;
+    border-radius: 9999px;
     font-weight: 600;
     letter-spacing: 0.3px;
-    box-shadow: 0 2px 8px rgba(19,112,181,0.35);
-    transition: all 0.2s;
+    box-shadow: 6px 6px 9px rgba(24,99,220,0.3);
+    transition: all 0.2s ease;
+    padding: 0.5rem 1.8rem;
 }
 .stButton > button[kind="primary"]:hover {
-    background: linear-gradient(135deg, #002540, #0e5f9e);
-    box-shadow: 0 4px 14px rgba(19,112,181,0.45);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, #1863dc, #29b6f6);
+    box-shadow: 8px 8px 14px rgba(41,182,246,0.4);
+    transform: translateY(-2px);
 }
 
 /* ── Download buttons ── */
 .stDownloadButton > button {
-    border-radius: 8px;
+    border-radius: 9999px;
     font-weight: 600;
     font-size: 0.84rem;
+    border: 2px solid #1863dc !important;
+    color: #1863dc !important;
+    background: #ffffff !important;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 6px rgba(24,99,220,0.12);
+}
+.stDownloadButton > button:hover {
+    background: linear-gradient(135deg, #003153, #1863dc) !important;
+    color: #ffffff !important;
+    box-shadow: 6px 6px 9px rgba(24,99,220,0.3);
+    transform: translateY(-2px);
 }
 
 /* ── Expander ── */
 .streamlit-expanderHeader {
     font-weight: 600 !important;
-    color: #1a3c5e !important;
+    color: #003153 !important;
+    background: #f3fbff !important;
+    border-radius: 8px !important;
+}
+
+/* ── Selectbox / inputs ── */
+div[data-baseweb="select"] > div {
+    border-radius: 9999px !important;
+    border-color: #b8ddf5 !important;
+}
+div[data-baseweb="input"] > div {
+    border-radius: 9999px !important;
+    border-color: #b8ddf5 !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -713,6 +753,9 @@ if "results_df" in st.session_state:
 </div>""", unsafe_allow_html=True)
 
     st.markdown("<div style='margin-bottom:0.5rem'></div>", unsafe_allow_html=True)
+
+    # ── Analytics Dashboard ───────────────────────────────────────────────────
+    render_analytics_dashboard(df)
 
     # ── Filters ───────────────────────────────────────────────────────────────
     st.markdown('<div class="section-header">Filter Results</div>', unsafe_allow_html=True)
