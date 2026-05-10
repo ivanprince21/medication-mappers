@@ -74,13 +74,11 @@ def _normalize_ndc(raw: str) -> list[str]:
         # 11-digit NDC: always 5-4-2, no digits dropped
         candidates.append(f"{d[0:5]}-{d[5:9]}-{d[9:11]}")
     elif len(d) == 10:
-        # 10-digit NDC: three possible labeler/product splits used by different manufacturers
-        candidates.append(f"{d[0:4]}-{d[4:8]}-{d[8:10]}")   # 4-4-2
-        candidates.append(f"{d[0:5]}-{d[5:8]}-{d[8:10]}")   # 5-3-2
-        candidates.append(f"{d[0:5]}-{d[5:9]}-{d[9:10]}")   # 5-4-1
-        # Also try zero-padded to 11 then 5-4-2
-        d11 = "0" + d
-        candidates.append(f"{d11[0:5]}-{d11[5:9]}-{d11[9:11]}")
+        # 10-digit NDC: pad to 11 digits with 0 at the front or 0 at the end, then format 5-4-2
+        d_front = "0" + d        # leading zero  e.g. 0935004560 -> 00935004560 -> 00935-0045-60
+        d_back  = d + "0"        # trailing zero e.g. 0935004560 -> 09350045600 -> 09350-0456-00
+        candidates.append(f"{d_front[0:5]}-{d_front[5:9]}-{d_front[9:11]}")
+        candidates.append(f"{d_back[0:5]}-{d_back[5:9]}-{d_back[9:11]}")
 
     # Always include the raw value and bare digits as final fallbacks
     candidates.append(raw.strip())
