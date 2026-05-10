@@ -170,6 +170,11 @@ def _compute_data(df: pd.DataFrame) -> dict:
             "icd3": "Possible ICD-10-CM Code 3",
             "icd4": "Possible ICD-10-CM Code 4",
             "src":  "Data Source",
+            # HCC category slots — used by the Top 10 HCC chart drill-down filter
+            "hcc1": "HCC Category (ICD 1)",
+            "hcc2": "HCC Category (ICD 2)",
+            "hcc3": "HCC Category (ICD 3)",
+            "hcc4": "HCC Category (ICD 4)",
         }
         subset = {}
         for k, col in col_map.items():
@@ -629,6 +634,12 @@ function _bootApp(cjOk) {
             rows = rows.filter(function(r) {
               return (r.icd1||'').toLowerCase()===val || (r.icd2||'').toLowerCase()===val ||
                      (r.icd3||'').toLowerCase()===val || (r.icd4||'').toLowerCase()===val;
+            });
+          } else if (col === 'hcc_cat') {
+            /* HCC category spans 4 slots — match any */
+            rows = rows.filter(function(r) {
+              return (r.hcc1||'').toLowerCase()===val || (r.hcc2||'').toLowerCase()===val ||
+                     (r.hcc3||'').toLowerCase()===val || (r.hcc4||'').toLowerCase()===val;
             });
           } else {
             rows = rows.filter(function(r){ return (r[col]||'').toLowerCase()===val; });
