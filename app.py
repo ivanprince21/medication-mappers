@@ -46,15 +46,80 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
-/* ── Global ── */
-html, body, [class*="css"] {
+/* ── Global reset — white bg, dark readable text ── */
+html, body {
     font-family: 'Inter', 'Segoe UI', sans-serif !important;
-    background-color: #ffffff;
+    background-color: #ffffff !important;
+    color: #212121 !important;
 }
+[class*="css"] {
+    font-family: 'Inter', 'Segoe UI', sans-serif !important;
+}
+
+/* Streamlit containers */
 [data-testid="stAppViewContainer"],
 [data-testid="stMain"],
-section[data-testid="stSidebar"] { background-color: #ffffff !important; }
+[data-testid="block-container"],
+section[data-testid="stSidebar"],
+.main, .stApp {
+    background-color: #ffffff !important;
+    color: #212121 !important;
+}
 .block-container { padding-top: 0 !important; max-width: 1400px; background: #ffffff; }
+
+/* All plain text, markdown, paragraphs */
+p, span, li, td, th, div,
+[data-testid="stMarkdown"],
+[data-testid="stMarkdown"] p,
+[data-testid="stMarkdown"] li,
+[data-testid="stText"],
+[data-testid="stCaption"] {
+    color: #212121 !important;
+}
+
+/* Labels on all widgets */
+label, .stSelectbox label, .stTextInput label,
+.stMultiSelect label, .stSlider label,
+.stRadio label, .stCheckbox label,
+.stDateInput label, .stNumberInput label,
+[data-testid="stWidgetLabel"],
+[data-testid="stWidgetLabel"] p {
+    color: #003153 !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+}
+
+/* Selectbox / dropdown text */
+div[data-baseweb="select"] [data-testid="stMarkdown"],
+div[data-baseweb="select"] span,
+div[data-baseweb="select"] div {
+    color: #212121 !important;
+}
+
+/* Input field text */
+input, textarea {
+    color: #212121 !important;
+    background-color: #ffffff !important;
+}
+
+/* Captions */
+[data-testid="stCaptionContainer"],
+[data-testid="stCaptionContainer"] p {
+    color: #556677 !important;
+    font-size: 0.80rem !important;
+}
+
+/* Success / info / warning / error boxes */
+[data-testid="stAlert"] { color: inherit !important; }
+
+/* Expander content area */
+[data-testid="stExpander"] details summary p,
+[data-testid="stExpander"] details div p {
+    color: #212121 !important;
+}
+
+/* st.info / st.success / st.warning text */
+.stAlert p { color: inherit !important; }
 
 /* ── Header banner — HealthSmart MSO blue ── */
 .app-header {
@@ -350,21 +415,55 @@ div[data-testid="stDataFrame"] { font-size: 0.81rem; }
     background: #eaf4fb !important;
     border-radius: 8px !important;
 }
+[data-testid="stExpander"] summary,
+[data-testid="stExpander"] summary p,
+[data-testid="stExpander"] summary span {
+    color: #003153 !important;
+    font-weight: 600 !important;
+}
 
-/* ── Tabs bar background ── */
+/* ── Tabs bar background + text ── */
 .stTabs [data-baseweb="tab-list"] {
     background: #eaf4fb !important;
+}
+.stTabs [data-baseweb="tab"] p,
+.stTabs [data-baseweb="tab"] span,
+.stTabs [data-baseweb="tab"] div {
+    color: #003153 !important;
+}
+.stTabs [aria-selected="true"] p,
+.stTabs [aria-selected="true"] span,
+.stTabs [aria-selected="true"] div {
+    color: #ffffff !important;
 }
 
 /* ── Selectbox / inputs ── */
 div[data-baseweb="select"] > div {
     border-radius: 9999px !important;
     border-color: #b8ddf5 !important;
+    background-color: #ffffff !important;
+    color: #212121 !important;
 }
+div[data-baseweb="select"] span { color: #212121 !important; }
 div[data-baseweb="input"] > div {
     border-radius: 9999px !important;
     border-color: #b8ddf5 !important;
+    background-color: #ffffff !important;
 }
+div[data-baseweb="input"] input { color: #212121 !important; }
+
+/* ── File uploader ── */
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"] p,
+[data-testid="stFileUploader"] span {
+    color: #003153 !important;
+}
+
+/* ── Horizontal rule ── */
+hr { border-color: #d0e8f5 !important; }
+
+/* ── Dataframe cell text ── */
+div[data-testid="stDataFrame"] { font-size: 0.81rem; color: #212121; }
 </style>
 """, unsafe_allow_html=True)
 
