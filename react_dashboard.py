@@ -197,69 +197,81 @@ def _compute_data(df: pd.DataFrame) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:Inter,system-ui,sans-serif;background:#f8fafc;color:#212121;font-size:14px}
+body{font-family:Inter,system-ui,sans-serif;background:#ffffff;color:#212121;font-size:14px}
 #loading{display:flex;align-items:center;justify-content:center;height:180px;
-  font-size:1rem;color:#003153;background:#eaf4fb;border-radius:12px;margin:24px;
-  font-weight:600;letter-spacing:.3px}
+  font-size:1rem;color:#003153;background:linear-gradient(135deg,#f0f7ff,#eaf4fb);
+  border-radius:12px;margin:24px;font-weight:600;letter-spacing:.3px;
+  box-shadow:0 4px 20px rgba(24,99,220,0.08)}
 .err{background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:16px;
   margin:16px;color:#991b1b;font-family:monospace;white-space:pre-wrap;font-size:12px}
 .header{background:linear-gradient(135deg,#003153 0%,#1863dc 100%);
-  color:#fff;padding:24px 32px 20px}
+  color:#fff;padding:24px 32px 20px;
+  box-shadow:0 4px 20px rgba(24,99,220,0.25)}
 .header h1{font-size:1.5rem;font-weight:800;letter-spacing:-.3px}
 .header p{font-size:.85rem;opacity:.75;margin-top:4px}
 .body{padding:20px 24px}
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
-.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
-.card{background:#fff;border-radius:12px;padding:16px;
-  box-shadow:0 1px 4px rgba(0,0,0,.08);border:1px solid #e5edf5}
-.card-title{font-size:.75rem;font-weight:700;text-transform:uppercase;
-  letter-spacing:.5px;color:#556;margin-bottom:10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.card{background:linear-gradient(135deg,#ffffff 0%,#f8fbff 100%);border-radius:12px;padding:16px;
+  box-shadow:0 2px 16px rgba(24,99,220,0.07),0 1px 3px rgba(0,0,0,0.04);
+  border:1px solid #e2eef8;transition:box-shadow 0.2s ease,transform 0.2s ease}
+.card:hover{box-shadow:0 4px 24px rgba(24,99,220,0.12),0 1px 4px rgba(0,0,0,0.06);transform:translateY(-1px)}
+.card-title{font-size:.72rem;font-weight:700;text-transform:uppercase;
+  letter-spacing:.5px;color:#6b7a8d;margin-bottom:10px}
 .kpi-val{font-size:2.2rem;font-weight:900;line-height:1}
 .kpi-lbl{font-size:.7rem;font-weight:600;text-transform:uppercase;
   letter-spacing:.5px;color:#667;margin-top:4px}
-.badge{display:inline-block;padding:2px 10px;border-radius:999px;font-size:.72rem;font-weight:600}
-.badge-high{background:#d1fae5;color:#065f46}
-.badge-med{background:#dbeafe;color:#1e3a8a}
-.badge-low{background:#fef9c3;color:#92400e}
-.badge-unk{background:#f3f4f6;color:#4b5563}
-.badge-yes{background:#fee2e2;color:#991b1b}
-.badge-no{background:#d1fae5;color:#065f46}
-.chart-filter-bar{background:#eff6ff;border:1px solid #1863dc;border-left:4px solid #1863dc;
-  border-radius:8px;padding:8px 14px;margin-bottom:10px;
-  display:flex;justify-content:space-between;align-items:center;gap:8px}
+.badge{display:inline-block;padding:3px 12px;border-radius:999px;font-size:.72rem;font-weight:600}
+.badge-high{background:linear-gradient(135deg,#d1fae5,#ecfdf5);color:#065f46}
+.badge-med{background:linear-gradient(135deg,#dbeafe,#eff6ff);color:#1e3a8a}
+.badge-low{background:linear-gradient(135deg,#fef9c3,#fefce8);color:#92400e}
+.badge-unk{background:linear-gradient(135deg,#f3f4f6,#f9fafb);color:#4b5563}
+.badge-yes{background:linear-gradient(135deg,#fee2e2,#fff5f5);color:#991b1b}
+.badge-no{background:linear-gradient(135deg,#d1fae5,#ecfdf5);color:#065f46}
+.chart-filter-bar{background:linear-gradient(135deg,#eff6ff,#f0f7ff);
+  border:1px solid #bfdbfe;border-left:3px solid #1863dc;
+  border-radius:10px;padding:8px 14px;margin-bottom:10px;
+  display:flex;justify-content:space-between;align-items:center;gap:8px;
+  box-shadow:0 2px 8px rgba(24,99,220,0.08)}
 .chart-filter-label{font-size:.82rem;color:#003153;font-weight:600}
 .chart-filter-hint{font-size:.75rem;color:#667;font-style:italic}
 .tbl-wrap{overflow-x:auto;margin-top:8px}
 table{width:100%;border-collapse:collapse;font-size:.8rem}
 thead tr{background:linear-gradient(135deg,#003153 0%,#1863dc 100%);color:#fff}
-th{padding:8px 10px;text-align:left;font-size:.72rem;font-weight:600;
+th{padding:7px 12px;text-align:left;font-size:.72rem;font-weight:600;
    text-transform:uppercase;letter-spacing:.4px;cursor:pointer;white-space:nowrap;user-select:none}
 th:hover{background:rgba(255,255,255,.12)}
-tbody tr:nth-child(even){background:#f0f7ff}
-tbody tr:hover{background:#dbeafe}
-td{padding:7px 10px;border-bottom:1px solid #e5edf5}
+tbody tr:nth-child(even){background:#f8faff}
+tbody tr:hover{background:linear-gradient(135deg,#eff6ff,#f0f7ff)}
+td{padding:7px 10px;border-bottom:1px solid #eef2f8}
 .filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;align-items:center}
-.filter-bar input,.filter-bar select{border:1px solid #c5d8ef;border-radius:999px;
-  padding:5px 14px;font-size:.8rem;background:#fff;outline:none;color:#212121}
+.filter-bar input,.filter-bar select{border:1px solid #d0dff0;border-radius:10px;
+  padding:5px 14px;font-size:.8rem;background:#fff;outline:none;color:#212121;
+  box-shadow:0 1px 4px rgba(24,99,220,0.06)}
 .filter-bar input{flex:1;min-width:180px}
 .filter-bar input:focus,.filter-bar select:focus{border-color:#1863dc;
-  box-shadow:0 0 0 2px rgba(24,99,220,.15)}
-.btn{border:1px solid #c5d8ef;border-radius:999px;padding:5px 16px;
-  font-size:.8rem;background:#f8fafc;cursor:pointer;color:#003153;font-weight:600}
-.btn:hover{background:#eaf4fb}
+  box-shadow:0 0 0 3px rgba(24,99,220,.12)}
+.btn{border:1px solid #d0dff0;border-radius:999px;padding:5px 16px;
+  font-size:.8rem;background:linear-gradient(135deg,#f8fafc,#f0f7ff);
+  cursor:pointer;color:#003153;font-weight:600;
+  box-shadow:0 1px 4px rgba(24,99,220,0.06);transition:all 0.15s ease}
+.btn:hover{background:linear-gradient(135deg,#eaf4fb,#e0f0ff);
+  box-shadow:0 2px 8px rgba(24,99,220,0.12)}
 .btn:disabled{opacity:.35;cursor:not-allowed}
 .btn-export{background:linear-gradient(135deg,#003153,#1863dc);color:#fff;border:none;
-  border-radius:999px;padding:5px 16px;font-size:.8rem;cursor:pointer;font-weight:600}
-.btn-export:hover{background:linear-gradient(135deg,#1863dc,#29b6f6)}
+  border-radius:999px;padding:5px 16px;font-size:.8rem;cursor:pointer;font-weight:600;
+  box-shadow:0 4px 16px rgba(24,99,220,0.30);transition:all 0.2s ease}
+.btn-export:hover{background:linear-gradient(135deg,#1863dc,#29b6f6);
+  box-shadow:0 4px 20px rgba(41,182,246,0.40);transform:translateY(-1px)}
 .row-count{font-size:.75rem;color:#667;margin-bottom:6px}
 .pagination{display:flex;justify-content:space-between;align-items:center;margin-top:12px}
 .page-info{font-size:.75rem;color:#667}
-.space-y>*+*{margin-top:16px}
+.space-y>*+*{margin-top:14px}
 .hcc-yes{color:#c2410c;font-weight:600}
 .hcc-no{color:#9ca3af}
-.src-tag{font-size:.7rem;background:#f0f7ff;color:#1863dc;
-  padding:1px 8px;border-radius:999px;border:1px solid #c5d8ef}
+.src-tag{font-size:.7rem;background:linear-gradient(135deg,#f0f7ff,#eaf4fb);color:#1863dc;
+  padding:2px 9px;border-radius:999px;border:1px solid #c5d8ef}
 .other-icds{font-family:monospace;font-size:.72rem;color:#556}
 .tbl-header-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .no-chart{color:#9ca3af;text-align:center;padding:20px;font-size:.8rem}
@@ -363,7 +375,11 @@ function _bootApp(cjOk) {
     /* ── KPI Card ── */
     function KPICard(p) {
       return html`
-        <div class="card" style=${{borderTop:'4px solid '+p.color}}>
+        <div class="card" style=${{
+          borderTop:'4px solid '+p.color,
+          borderLeft:'3px solid '+p.color,
+          boxShadow:'0 4px 24px rgba(24,99,220,0.10), 0 1px 4px rgba(0,0,0,0.04)',
+        }}>
           <div class="kpi-val" style=${{color:p.color}}>${p.value.toLocaleString()}</div>
           <div class="kpi-lbl">${p.icon} ${p.title}</div>
         </div>`;

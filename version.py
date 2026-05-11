@@ -3,10 +3,21 @@ version.py — Single source of truth for app version info.
 Update VERSION and RELEASE_DATE whenever a new feature is deployed.
 """
 
-VERSION      = "1.4.0"
+VERSION      = "1.5.0"
 RELEASE_DATE = "May 10, 2026"
 
 CHANGELOG = """
+**v1.5.0** (May 10, 2026)
+- UI redesign: glow-card system — gradient fills, blue glow shadows on all cards
+- Header text forced white on dark side, navy on light-blue gradient side
+- Metric cards: larger values (2.2rem/900), stronger hover lift, gradient fill
+- Section headers: left accent bar style (cleaner than underline)
+- API status badges: gradient tint fills, hover animation
+- Analytics dashboard: KPI cards with top + left border accent, glow shadows
+- Filter inputs: border-radius 10px, softer focus ring
+- Download buttons: gradient fill, lighter border
+- Design system rules added: CLAUDE.md + AGENTS.md
+
 **v1.4.0** (May 10, 2026)
 - Fixed analytics dashboard: replaced Recharts with Chart.js (canvas-based)
   — root cause: Recharts CDN silently returned HTTP 200 HTML pages in Streamlit
